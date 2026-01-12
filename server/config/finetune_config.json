@@ -14,10 +14,11 @@
         "keep_last_n_checkpoints": 3
     },
     "data": {
-        "train_csv": "training_data/metadata_train.csv",
-        "eval_csv": "training_data/metadata_eval.csv",
+        "metadata_csv": "training_data/metadata.csv",
         "audio_dir": "training_data/processed/",
         "language": "en",
+        "eval_split_ratio": 0.1,
+        "random_seed": 42,
         "sample_rate": 22050
     },
     "logging": {

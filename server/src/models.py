@@ -126,9 +126,10 @@ class DataConfig(BaseModel):
     """Dataset paths and language configuration."""
 
     audio_dir: str
-    train_csv: str
-    eval_csv: str
+    metadata_csv: str
     language: str
+    eval_split_ratio: float = 0.1
+    random_seed: int = 42
 
 
 class TrainingConfig(BaseModel):

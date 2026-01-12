@@ -4,7 +4,7 @@ Fine-tune XTTS-v2 on custom voice dataset.
 
 This script handles the complete fine-tuning process:
 1. Load pre-trained XTTS-v2 model
-2. Prepare dataset from metadata CSV
+2. Split and prepare dataset from metadata CSV
 3. Run training loop
 4. Save fine-tuned model
 
@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -26,6 +27,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import torch
+from torch.utils.data import random_split
 
 # Set environment variables before importing TTS
 os.environ["COQUI_TOS_AGREED"] = "1"
@@ -52,12 +54,64 @@ def load_config(config_path: str) -> FinetuneConfig:
     return FinetuneConfig.model_validate(config_dict)
 
 
+def split_and_save_metadata(
+    metadata_csv: str,
+    eval_ratio: float,
+    seed: int,
+) -> tuple[str, str]:
+    """
+    Split metadata CSV into train and eval sets, saving to separate files.
+
+    Args:
+        metadata_csv: Path to the source metadata CSV file.
+        eval_ratio: Fraction of data to use for evaluation (0.0-1.0).
+        seed: Random seed for reproducible splitting.
+
+    Returns:
+        Tuple of (train_csv_path, eval_csv_path) for the generated files.
+    """
+    with open(metadata_csv, "r") as f:
+        reader = csv.reader(f, delimiter="|")
+        entries = [row for row in reader if len(row) == 2]
+
+    train_ratio = 1.0 - eval_ratio
+    train_size = int(len(entries) * train_ratio)
+    eval_size = len(entries) - train_size
+
+    generator = torch.Generator().manual_seed(seed)
+    train_subset, eval_subset = random_split(
+        entries, [train_size, eval_size], generator=generator
+    )
+
+    train_entries = [entries[i] for i in train_subset.indices]
+    eval_entries = [entries[i] for i in eval_subset.indices]
+
+    # Write split files
+    train_csv = metadata_csv.replace(".csv", "_train.csv")
+    eval_csv = metadata_csv.replace(".csv", "_eval.csv")
+
+    with open(train_csv, "w", newline="") as f:
+        writer = csv.writer(f, delimiter="|")
+        writer.writerows(train_entries)
+
+    with open(eval_csv, "w", newline="") as f:
+        writer = csv.writer(f, delimiter="|")
+        writer.writerows(eval_entries)
+
+    print(f"Dataset split (seed={seed}, eval_ratio={eval_ratio}):")
+    print(f"  Total entries: {len(entries)}")
+    print(f"  Training: {len(train_entries)} -> {train_csv}")
+    print(f"  Evaluation: {len(eval_entries)} -> {eval_csv}")
+
+    return train_csv, eval_csv
+
+
 def prepare_dataset(config: FinetuneConfig) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """
-    Prepare training and evaluation datasets from CSV metadata files.
+    Prepare training and evaluation datasets from metadata CSV.
 
-    Reads metadata CSV files in 'filename|text' format and creates
-    sample dictionaries for each valid audio file found.
+    Splits the metadata CSV into train/eval sets and creates sample
+    dictionaries for each valid audio file found.
 
     Args:
         config: Fine-tuning configuration containing data paths.
@@ -67,13 +121,20 @@ def prepare_dataset(config: FinetuneConfig) -> tuple[list[dict[str, str]], list[
         of sample dictionaries with audio_file, text, speaker_name,
         and language fields.
     """
+    # Split the dataset and save train/eval CSV files
+    train_csv, eval_csv = split_and_save_metadata(
+        config.data.metadata_csv,
+        config.data.eval_split_ratio,
+        config.data.random_seed,
+    )
+
     train_samples: list[dict[str, str]] = []
     eval_samples: list[dict[str, str]] = []
 
     audio_dir = Path(config.data.audio_dir)
 
     # Load training samples
-    with open(config.data.train_csv, "r") as f:
+    with open(train_csv, "r") as f:
         for line in f:
             parts = line.strip().split("|")
             if len(parts) == 2:
@@ -89,7 +150,7 @@ def prepare_dataset(config: FinetuneConfig) -> tuple[list[dict[str, str]], list[
                     train_samples.append(sample.model_dump())
 
     # Load eval samples
-    with open(config.data.eval_csv, "r") as f:
+    with open(eval_csv, "r") as f:
         for line in f:
             parts = line.strip().split("|")
             if len(parts) == 2:
@@ -104,8 +165,9 @@ def prepare_dataset(config: FinetuneConfig) -> tuple[list[dict[str, str]], list[
                     )
                     eval_samples.append(sample.model_dump())
 
-    print(f"Training samples: {len(train_samples)}")
-    print(f"Evaluation samples: {len(eval_samples)}")
+    print(f"\nSamples with valid audio files:")
+    print(f"  Training: {len(train_samples)}")
+    print(f"  Evaluation: {len(eval_samples)}")
 
     return train_samples, eval_samples
 
