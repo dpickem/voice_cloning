@@ -5,7 +5,6 @@ TTS Backend implementations for multiple voice cloning models.
 Provides a unified interface for different TTS models:
 - XTTS v2 (Coqui TTS)
 - F5-TTS
-- Chatterbox (Resemble AI)
 
 Usage:
     from tts_backends import get_backend, TTSBackend, ModelType

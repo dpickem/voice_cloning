@@ -21,7 +21,6 @@ class ModelType(str, Enum):
 
     XTTS = "xtts"
     F5_TTS = "f5-tts"
-    CHATTERBOX = "chatterbox"
 
     @classmethod
     def from_string(cls, value: str) -> "ModelType":

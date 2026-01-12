@@ -21,7 +21,7 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
 # =============================================================================
-# TTS Backends (install the ones you need)
+# TTS Backends
 # =============================================================================
 
 # XTTS v2 (Coqui TTS) - default backend
@@ -30,7 +30,11 @@ TTS>=0.22.0
 transformers>=4.33.0,<4.40.0
 
 # F5-TTS - high quality zero-shot voice cloning
+# Note: F5-TTS is flexible with transformers version
 f5-tts
 
-# Chatterbox (Resemble AI) - production-ready zero-shot voice cloning
-chatterbox-tts
+# Chatterbox (Resemble AI) - INCOMPATIBLE with XTTS
+# Requires transformers==4.46.3 which conflicts with XTTS's transformers<4.40.0
+# Install in separate environment if needed:
+#   pip install chatterbox-tts
+# chatterbox-tts

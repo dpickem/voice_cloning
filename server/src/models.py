@@ -22,8 +22,6 @@ class ModelType(str, Enum):
 
     XTTS = "xtts"
     F5_TTS = "f5-tts"
-    CHATTERBOX = "chatterbox"
-    OPENVOICE = "openvoice"
 
 
 class TTSRequest(BaseModel):
@@ -37,7 +35,7 @@ class TTSRequest(BaseModel):
                   Defaults to English.
         voice: Filename of the voice reference WAV file to use for cloning.
                Must exist in the voice references directory.
-        model: TTS model backend to use (xtts, f5-tts, chatterbox, openvoice).
+        model: TTS model backend to use (xtts, f5-tts).
                If not specified, uses the server's default model.
         reference_text: Transcript of reference audio (required for F5-TTS,
                        optional for others).
@@ -59,7 +57,7 @@ class TTSRequest(BaseModel):
     )
     model: Optional[str] = Field(
         default=None,
-        description="TTS model to use: xtts, f5-tts, chatterbox, openvoice (default: server config)",
+        description="TTS model to use: xtts, f5-tts (default: server config)",
     )
     reference_text: Optional[str] = Field(
         default=None,

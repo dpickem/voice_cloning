@@ -6,8 +6,6 @@ FastAPI server that provides text-to-speech synthesis with zero-shot
 voice cloning. Supports multiple TTS backends:
 - XTTS v2 (Coqui TTS) - default
 - F5-TTS
-- Chatterbox (Resemble AI)
-- OpenVoice (MyShell)
 
 Requires NVIDIA GPU with CUDA support.
 

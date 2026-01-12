@@ -16,7 +16,6 @@ from tts_backends.base import ModelType, TTSBackend
 _BACKEND_REGISTRY: dict[ModelType, str] = {
     ModelType.XTTS: "tts_backends.xtts_backend.XTTSBackend",
     ModelType.F5_TTS: "tts_backends.f5tts_backend.F5TTSBackend",
-    ModelType.CHATTERBOX: "tts_backends.chatterbox_backend.ChatterboxBackend",
 }
 
 
