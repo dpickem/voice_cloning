@@ -2,6 +2,8 @@
 TTS>=0.22.0
 torch>=2.0.0
 torchaudio>=2.0.0
+# Pin transformers to avoid BeamSearchScorer import error (removed in transformers>=4.40)
+transformers>=4.33.0,<4.40.0
 
 # API Server
 fastapi>=0.104.0
