@@ -5,9 +5,18 @@ Split metadata into training and evaluation sets.
 Reads a metadata CSV file and randomly splits it into separate
 training and evaluation files for model fine-tuning.
 
-Usage:
-    python split_dataset.py
-    python split_dataset.py --metadata training_data/metadata.csv --train-ratio 0.85
+Usage (from server/ directory):
+    python scripts/split_dataset.py
+    python scripts/split_dataset.py --metadata training_data/metadata.csv --train-ratio 0.85 --seed 42
+
+File structure:
+    server/
+    ├── scripts/
+    │   └── split_dataset.py             # This script
+    └── training_data/
+        ├── metadata.csv                 # Input: full dataset
+        ├── metadata_train.csv           # Output: training split
+        └── metadata_eval.csv            # Output: evaluation split
 """
 
 from __future__ import annotations

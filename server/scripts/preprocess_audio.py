@@ -6,9 +6,18 @@ Normalizes, denoises, and resamples audio to optimal format for
 XTTS-v2 voice cloning. Can be run inside the Docker container
 or standalone with dependencies installed.
 
-Usage:
-    python preprocess_audio.py input.wav -o output.wav
-    python preprocess_audio.py input.mp3 --sr 22050 --no-denoise
+Usage (from server/ directory):
+    python scripts/preprocess_audio.py input.wav -o output.wav
+    python scripts/preprocess_audio.py voice_references/raw.mp3 -o voice_references/processed.wav
+    python scripts/preprocess_audio.py input.mp3 --sr 22050 --no-denoise
+
+File structure:
+    server/
+    ├── scripts/
+    │   └── preprocess_audio.py     # This script
+    ├── src/
+    │   └── audio.py                # Audio processing utilities
+    └── voice_references/           # Store processed reference files here
 """
 
 from __future__ import annotations

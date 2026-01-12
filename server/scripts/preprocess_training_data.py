@@ -6,9 +6,20 @@ Processes all audio files referenced in a metadata CSV, applying
 normalization, denoising, and resampling to ensure consistent
 format across the training dataset.
 
-Usage:
-    python preprocess_training_data.py
-    python preprocess_training_data.py --input-dir wavs --output-dir processed --workers 8
+Usage (from server/ directory):
+    python scripts/preprocess_training_data.py
+    python scripts/preprocess_training_data.py --input-dir training_data/wavs --output-dir training_data/processed --workers 8
+
+File structure:
+    server/
+    ├── scripts/
+    │   └── preprocess_training_data.py  # This script
+    ├── src/
+    │   └── audio.py                     # Audio processing utilities
+    └── training_data/
+        ├── metadata.csv                 # Audio file list (filename|text)
+        ├── wavs/                        # Raw audio files
+        └── processed/                   # Output: preprocessed audio files
 """
 
 from __future__ import annotations
