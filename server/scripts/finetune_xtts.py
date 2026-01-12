@@ -45,8 +45,56 @@ from models import FinetuneConfig, Sample
 # Type alias for metadata entries: (filename, text, audio_path)
 MetadataEntry = tuple[str, str, Path]
 
+# =============================================================================
+# Constants
+# =============================================================================
+
 # Default speaker name for fine-tuned voice
 DEFAULT_SPEAKER_NAME = "custom_voice"
+
+# Metadata CSV format
+METADATA_CSV_COLUMNS = 2  # Expected: filename|text
+
+# Dataset split
+MIN_SAMPLES_FOR_EVAL_SPLIT = 2  # Need at least 2 samples to split
+MIN_EVAL_SAMPLES = 1  # Minimum evaluation samples when splitting
+
+# Training thresholds
+MIN_TRAINING_SAMPLES_WARNING = 10  # Warn if fewer training samples
+
+# XTTS model architecture constants (at 22050Hz sample rate)
+XTTS_SAMPLE_RATE = 22050
+XTTS_OUTPUT_SAMPLE_RATE = 24000
+XTTS_MAX_CONDITIONING_LENGTH = 132300   # ~6 seconds at 22050Hz
+XTTS_MIN_CONDITIONING_LENGTH = 66150    # ~3 seconds at 22050Hz
+XTTS_MAX_WAV_LENGTH = 255995            # ~11.6 seconds at 22050Hz
+XTTS_MAX_TEXT_LENGTH = 200
+
+# GPT audio token IDs (fixed by model architecture)
+GPT_NUM_AUDIO_TOKENS = 1026
+GPT_START_AUDIO_TOKEN = 1024
+GPT_STOP_AUDIO_TOKEN = 1025
+
+# Training defaults
+DEFAULT_BATCH_GROUP_SIZE = 0
+DEFAULT_WEIGHT_DECAY = 1e-2
+DEFAULT_GRAD_CLIP = 1.0
+DEFAULT_NUM_LOADER_WORKERS = 4
+DEFAULT_PRINT_STEP = 50
+DEFAULT_SAVE_STEP = 1000
+DEFAULT_SAVE_N_CHECKPOINTS = 2
+DEFAULT_SAVE_BEST_AFTER = 0
+
+# Learning rate scheduler (MultiStepLR)
+LR_MILESTONE_MULTIPLIER = 18
+LR_MILESTONES = [50000 * LR_MILESTONE_MULTIPLIER,
+                 150000 * LR_MILESTONE_MULTIPLIER,
+                 300000 * LR_MILESTONE_MULTIPLIER]
+LR_GAMMA = 0.5
+
+# Display
+PRINT_SEPARATOR_WIDTH = 60
+BYTES_TO_GB = 1e9
 
 
 # =============================================================================
@@ -100,7 +148,7 @@ def load_valid_entries(
     with open(metadata_csv, "r") as f:
         reader = csv.reader(f, delimiter="|")
         for row in reader:
-            if len(row) != 2:
+            if len(row) != METADATA_CSV_COLUMNS:
                 continue
             filename, text = row
             audio_path = audio_dir / f"{filename}.wav"
@@ -140,9 +188,9 @@ def split_entries(
     train_size = total - eval_size
 
     # Ensure at least 1 eval sample if we have enough data
-    if eval_size == 0 and total > 1:
-        eval_size = 1
-        train_size = total - 1
+    if eval_size == 0 and total >= MIN_SAMPLES_FOR_EVAL_SPLIT:
+        eval_size = MIN_EVAL_SAMPLES
+        train_size = total - MIN_EVAL_SAMPLES
 
     generator = torch.Generator().manual_seed(seed)
     train_subset, eval_subset = random_split(
@@ -280,7 +328,7 @@ def print_gpu_info() -> None:
     print(f"GPU Available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-        vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / BYTES_TO_GB
         print(f"VRAM: {vram_gb:.1f} GB")
 
 
@@ -350,11 +398,15 @@ def main() -> None:
 
     Parses command-line arguments, loads configuration, initializes
     the model, prepares datasets, and runs the training loop.
+
+    Uses TTS library's GPTTrainer for proper XTTS fine-tuning, which
+    trains the GPT-based language model component of XTTS.
     """
     # Delayed imports for TTS components (heavy dependencies)
+    from TTS.config.shared_configs import BaseDatasetConfig
     from TTS.tts.configs.xtts_config import XttsConfig
-    from TTS.tts.models.xtts import Xtts
-    from trainer import Trainer, TrainerArgs
+    from TTS.tts.datasets import load_tts_samples
+    from TTS.tts.layers.xtts.trainer.gpt_trainer import GPTArgs, GPTTrainer, GPTTrainerConfig
 
     parser = argparse.ArgumentParser(description="Fine-tune XTTS-v2")
     parser.add_argument("--config", default="finetune_config.json", help="Config file")
@@ -364,11 +416,11 @@ def main() -> None:
     # Load configuration
     config = load_config(args.config)
 
-    print("=" * 60)
-    print("XTTS-v2 Fine-Tuning")
-    print("=" * 60)
+    print("=" * PRINT_SEPARATOR_WIDTH)
+    print("XTTS-v2 Fine-Tuning (GPT Trainer)")
+    print("=" * PRINT_SEPARATOR_WIDTH)
     print_gpu_info()
-    print("=" * 60)
+    print("=" * PRINT_SEPARATOR_WIDTH)
 
     # Create output directory
     output_path = Path(config.output_path)
@@ -379,41 +431,75 @@ def main() -> None:
     model_dir = ensure_model_downloaded(model_dir)
     print(f"Using model from: {model_dir}")
 
-    # Load XTTS config and model
-    print("\nLoading pre-trained XTTS-v2 model...")
-    model_config = XttsConfig()
-    model_config.load_json(str(model_dir / "config.json"))
-
-    # Apply fine-tuning parameters
-    model_config.batch_size = config.training.batch_size
-    model_config.eval_batch_size = config.training.eval_batch_size
-    model_config.num_epochs = config.training.num_epochs
-    model_config.lr = config.training.learning_rate
-    model_config.output_path = str(output_path)
-
-    # Initialize model
-    model: Xtts = Xtts.init_from_config(model_config)
-    model.load_checkpoint(model_config, checkpoint_dir=str(model_dir), use_deepspeed=False)
-
-    # Prepare datasets
+    # Prepare datasets first to get train/eval splits
     print("\nPreparing datasets...")
     train_samples, eval_samples = prepare_dataset(config)
 
-    if len(train_samples) < 10:
+    if len(train_samples) < MIN_TRAINING_SAMPLES_WARNING:
         print("⚠️  Warning: Very few training samples. Results may be poor.")
 
-    # Setup and run trainer
-    trainer_args = TrainerArgs(
-        restore_path=args.resume,
-        skip_train_epoch=False,
-        start_with_eval=True,
+    # Configure GPT trainer for XTTS fine-tuning
+    # Reference: TTS/tts/layers/xtts/trainer/gpt_trainer.py
+    model_args = GPTArgs(
+        max_conditioning_length=XTTS_MAX_CONDITIONING_LENGTH,
+        min_conditioning_length=XTTS_MIN_CONDITIONING_LENGTH,
+        debug_loading_failures=False,
+        max_wav_length=XTTS_MAX_WAV_LENGTH,
+        max_text_length=XTTS_MAX_TEXT_LENGTH,
+        mel_norm_file=str(model_dir / "mel_stats.pth"),
+        dvae_checkpoint=str(model_dir / "dvae.pth"),
+        xtts_checkpoint=str(model_dir / "model.pth"),
+        tokenizer_file=str(model_dir / "vocab.json"),
+        gpt_num_audio_tokens=GPT_NUM_AUDIO_TOKENS,
+        gpt_start_audio_token=GPT_START_AUDIO_TOKEN,
+        gpt_stop_audio_token=GPT_STOP_AUDIO_TOKEN,
+        gpt_use_masking_gt_prompt_approach=True,
+        gpt_use_perceiver_resampler=True,
     )
 
-    trainer = Trainer(
-        trainer_args,
-        model_config,
+    # Audio config matching XTTS requirements
+    audio_config = {
+        "sample_rate": XTTS_SAMPLE_RATE,
+        "output_sample_rate": XTTS_OUTPUT_SAMPLE_RATE,
+    }
+
+    # Training configuration
+    trainer_config = GPTTrainerConfig(
         output_path=str(output_path),
-        model=model,
+        model_args=model_args,
+        run_name="xtts_finetune",
+        project_name="xtts_finetune",
+        run_description="Fine-tuning XTTS-v2 on custom voice",
+        epochs=config.training.num_epochs,
+        batch_size=config.training.batch_size,
+        eval_batch_size=config.training.eval_batch_size,
+        batch_group_size=DEFAULT_BATCH_GROUP_SIZE,
+        lr=config.training.learning_rate,
+        lr_scheduler="MultiStepLR",
+        lr_scheduler_params={"milestones": LR_MILESTONES, "gamma": LR_GAMMA},
+        weight_decay=DEFAULT_WEIGHT_DECAY,
+        optimizer="AdamW",
+        optimizer_wd_only_on_weights=True,
+        grad_clip=DEFAULT_GRAD_CLIP,
+        num_loader_workers=DEFAULT_NUM_LOADER_WORKERS,
+        print_step=DEFAULT_PRINT_STEP,
+        save_step=DEFAULT_SAVE_STEP,
+        save_n_checkpoints=DEFAULT_SAVE_N_CHECKPOINTS,
+        save_checkpoints=True,
+        save_all_best=True,
+        save_best_after=DEFAULT_SAVE_BEST_AFTER,
+        target_loss="loss",
+        print_eval=True,
+        mixed_precision=False,
+        test_sentences=[],
+    )
+
+    # Initialize GPT trainer
+    print("\nInitializing GPT trainer...")
+    trainer = GPTTrainer(
+        trainer_config,
+        model_args=model_args,
+        audio_config=audio_config,
         train_samples=train_samples,
         eval_samples=eval_samples,
     )
@@ -421,14 +507,16 @@ def main() -> None:
     print("\nStarting fine-tuning...")
     print(f"Output directory: {output_path}")
     print(f"Training for {config.training.num_epochs} epochs")
-    print("-" * 60)
+    print(f"Training samples: {len(train_samples)}, Eval samples: {len(eval_samples)}")
+    print("-" * PRINT_SEPARATOR_WIDTH)
 
+    # Start training
     trainer.fit()
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * PRINT_SEPARATOR_WIDTH)
     print("Fine-tuning complete!")
     print(f"Model saved to: {output_path}")
-    print("=" * 60)
+    print("=" * PRINT_SEPARATOR_WIDTH)
 
 
 if __name__ == "__main__":
