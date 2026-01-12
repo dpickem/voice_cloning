@@ -464,6 +464,7 @@ def main() -> None:
     }
 
     # Training configuration
+    # Note: weight_decay is passed via optimizer_params, not as a direct argument
     trainer_config = GPTTrainerConfig(
         output_path=str(output_path),
         model_args=model_args,
@@ -477,9 +478,8 @@ def main() -> None:
         lr=config.training.learning_rate,
         lr_scheduler="MultiStepLR",
         lr_scheduler_params={"milestones": LR_MILESTONES, "gamma": LR_GAMMA},
-        weight_decay=DEFAULT_WEIGHT_DECAY,
         optimizer="AdamW",
-        optimizer_wd_only_on_weights=True,
+        optimizer_params={"weight_decay": DEFAULT_WEIGHT_DECAY},
         grad_clip=DEFAULT_GRAD_CLIP,
         num_loader_workers=DEFAULT_NUM_LOADER_WORKERS,
         print_step=DEFAULT_PRINT_STEP,
