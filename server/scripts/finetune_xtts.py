@@ -403,10 +403,8 @@ def main() -> None:
     trains the GPT-based language model component of XTTS.
     """
     # Delayed imports for TTS components (heavy dependencies)
-    from TTS.config.shared_configs import BaseDatasetConfig
-    from TTS.tts.configs.xtts_config import XttsConfig
-    from TTS.tts.datasets import load_tts_samples
     from TTS.tts.layers.xtts.trainer.gpt_trainer import GPTArgs, GPTTrainer, GPTTrainerConfig
+    from trainer import Trainer, TrainerArgs
 
     parser = argparse.ArgumentParser(description="Fine-tune XTTS-v2")
     parser.add_argument("--config", default="finetune_config.json", help="Config file")
@@ -488,11 +486,25 @@ def main() -> None:
         test_sentences=[],
     )
 
-    # Initialize GPT trainer
-    # GPTTrainer gets model_args from the config, samples are set separately
-    print("\nInitializing GPT trainer...")
-    trainer = GPTTrainer(
-        config=trainer_config,
+    # Initialize GPTTrainer model from config
+    # GPTTrainer is a model class (BaseTTS subclass), trained using the standard Trainer
+    print("\nInitializing GPT model...")
+    model = GPTTrainer.init_from_config(trainer_config)
+
+    # Setup trainer args
+    trainer_args = TrainerArgs(
+        restore_path=args.resume,
+        skip_train_epoch=False,
+        start_with_eval=True,
+    )
+
+    # Initialize the standard Trainer with GPTTrainer model
+    print("Setting up trainer...")
+    trainer = Trainer(
+        trainer_args,
+        trainer_config,
+        output_path=str(output_path),
+        model=model,
         train_samples=train_samples,
         eval_samples=eval_samples,
     )
