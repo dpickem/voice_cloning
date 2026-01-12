@@ -527,6 +527,12 @@ def main() -> None:
     # Initialize GPTTrainer model from config
     # GPTTrainer is a model class (BaseTTS subclass), trained using the standard Trainer
     print("\nInitializing GPT model...")
+
+    # Workaround: GPTTrainer expects dvae_sample_rate but XttsAudioConfig only has sample_rate
+    # This is a TTS library version compatibility issue
+    if hasattr(trainer_config, 'audio') and not hasattr(trainer_config.audio, 'dvae_sample_rate'):
+        trainer_config.audio.dvae_sample_rate = trainer_config.audio.sample_rate
+
     model = GPTTrainer.init_from_config(trainer_config)
 
     # Setup trainer args
