@@ -97,12 +97,12 @@ echo ""
 # -----------------------------------------------------------------------------
 # Setup environment file
 # -----------------------------------------------------------------------------
-if [ ! -f ".env" ]; then
+if [ ! -f "config/.env" ]; then
     echo "Creating .env file from template..."
-    cp env.example .env
-    echo "  ✓ Created .env (edit to customize settings)"
+    cp config/env.example config/.env
+    echo "  ✓ Created config/.env (edit to customize settings)"
 else
-    echo "  ✓ .env file already exists"
+    echo "  ✓ config/.env file already exists"
 fi
 
 echo ""
@@ -114,7 +114,7 @@ echo "Building Docker image..."
 echo "(This may take several minutes on first run)"
 echo ""
 
-docker compose build
+docker compose -f docker/docker-compose.yml build
 
 echo ""
 echo "  ✓ Docker image built successfully"
@@ -128,17 +128,18 @@ echo "Setup Complete!"
 echo "=============================================="
 echo ""
 echo "Directory structure:"
-echo "  $PROJECT_ROOT/"
-echo "  ├── data/"
-echo "  │   ├── voice_references/  -> Voice clone reference WAV files"
-echo "  │   └── training/          -> Training data for fine-tuning"
-echo "  └── server/"
-echo "      ├── voice_references   -> symlink to ../data/voice_references"
-echo "      ├── training_data      -> symlink to ../data/training"
-echo "      ├── audio_output/      -> Generated audio files"
-echo "      ├── logs/              -> Server logs"
-echo "      ├── models/            -> Cached TTS models (~2-3GB)"
-echo "      └── finetuned_model/   -> Fine-tuned model weights"
+echo "  $SCRIPT_DIR/"
+echo "  ├── src/                 -> Application source code"
+echo "  ├── scripts/             -> Processing & training scripts"
+echo "  ├── config/              -> Configuration files"
+echo "  ├── docker/              -> Docker files"
+echo "  ├── tests/               -> Test files"
+echo "  ├── voice_references     -> symlink to ../data/voice_references"
+echo "  ├── training_data        -> symlink to ../data/training"
+echo "  ├── audio_output/        -> Generated audio files"
+echo "  ├── logs/                -> Server logs"
+echo "  ├── models/              -> Cached TTS models (~2-3GB)"
+echo "  └── finetuned_model/     -> Fine-tuned model weights"
 echo ""
 echo "Next steps:"
 echo ""
@@ -146,10 +147,10 @@ echo "  1. Add voice reference files:"
 echo "     cp your_voice.wav ../data/voice_references/"
 echo ""
 echo "  2. Start the server:"
-echo "     docker compose up -d"
+echo "     docker compose -f docker/docker-compose.yml up -d"
 echo ""
 echo "  3. Check server status:"
-echo "     docker compose logs -f voice-tts"
+echo "     docker compose -f docker/docker-compose.yml logs -f voice-tts"
 echo "     curl http://localhost:8080/health"
 echo ""
 echo "  4. Test synthesis:"

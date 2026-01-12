@@ -7,15 +7,15 @@ Environment variables are loaded from .env file and validated.
 
 CONFIGURATION HIERARCHY:
     1. Environment variables (highest priority)
-    2. .env file in server directory
+    2. .env file in config/ directory
     3. Defaults defined in this file (lowest priority)
 
 WHAT GOES WHERE:
     - .env / Environment variables: Deployment-specific paths, model settings
-    - This file (tts_config.py): Environment variable definitions with types and defaults
+    - This file (config.py): Environment variable definitions with types and defaults
 
 Usage:
-    from tts_config import settings
+    from config import settings
 
     # Access settings via the settings object
     voice_dir = settings.VOICE_REFERENCES_DIR
@@ -32,7 +32,8 @@ from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 # Directory paths for default resolution
-_SERVER_DIR = Path(__file__).resolve().parent
+_SRC_DIR = Path(__file__).resolve().parent
+_SERVER_DIR = _SRC_DIR.parent
 _PROJECT_ROOT = _SERVER_DIR.parent
 
 
@@ -55,7 +56,10 @@ class TTSSettings(BaseSettings):
     # Directory containing fine-tuned model files
     FINETUNED_MODEL_DIR: Path = _SERVER_DIR / "finetuned_model"
 
-    @field_validator("VOICE_REFERENCES_DIR", "AUDIO_OUTPUT_DIR", "FINETUNED_MODEL_DIR", mode="before")
+    # Directory containing training data
+    TRAINING_DATA_DIR: Path = _PROJECT_ROOT / "data" / "training"
+
+    @field_validator("VOICE_REFERENCES_DIR", "AUDIO_OUTPUT_DIR", "FINETUNED_MODEL_DIR", "TRAINING_DATA_DIR", mode="before")
     @classmethod
     def parse_path(cls, v: str | Path) -> Path:
         """Convert string paths to Path objects and expand user (~)."""
@@ -101,7 +105,7 @@ class TTSSettings(BaseSettings):
     # PYDANTIC SETTINGS CONFIG
     # =========================================================================
     model_config = {
-        "env_file": str(_SERVER_DIR / ".env"),
+        "env_file": str(_SERVER_DIR / "config" / ".env"),
         "env_file_encoding": "utf-8",
         # Allow extra fields to be ignored (forward compatibility)
         "extra": "ignore",

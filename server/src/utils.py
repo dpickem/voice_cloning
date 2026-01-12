@@ -17,7 +17,7 @@ import numpy as np
 import soundfile as sf
 from fastapi import HTTPException
 
-from tts_models import VoiceInfo
+from models import VoiceInfo
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

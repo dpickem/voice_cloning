@@ -9,10 +9,13 @@ from unittest import TestCase, mock
 
 import numpy as np
 
-# Ensure the server module path is available for imports when running from repo root
+# Ensure the server module paths are available for imports when running from repo root
 SERVER_DIR = Path(__file__).resolve().parents[1]
-if str(SERVER_DIR) not in sys.path:
-    sys.path.append(str(SERVER_DIR))
+SRC_DIR = SERVER_DIR / "src"
+SCRIPTS_DIR = SERVER_DIR / "scripts"
+for path in [str(SERVER_DIR), str(SRC_DIR), str(SCRIPTS_DIR)]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 from preprocess_audio import preprocess_audio  # noqa: E402
 
@@ -20,12 +23,12 @@ from preprocess_audio import preprocess_audio  # noqa: E402
 class PreprocessAudioTests(TestCase):
     """Tests for the audio preprocessing pipeline."""
 
-    @mock.patch("audio_utils.sf.write")
-    @mock.patch("audio_utils.librosa.util.normalize")
-    @mock.patch("audio_utils.librosa.effects.trim")
-    @mock.patch("audio_utils.nr.reduce_noise")
-    @mock.patch("audio_utils.librosa.resample")
-    @mock.patch("audio_utils.librosa.load")
+    @mock.patch("audio.sf.write")
+    @mock.patch("audio.librosa.util.normalize")
+    @mock.patch("audio.librosa.effects.trim")
+    @mock.patch("audio.nr.reduce_noise")
+    @mock.patch("audio.librosa.resample")
+    @mock.patch("audio.librosa.load")
     def test_preprocess_audio_pipeline(
         self,
         mock_load: mock.MagicMock,

@@ -11,15 +11,15 @@ version: '3.8'
 #   POST /synthesize        - Generate speech (returns base64 audio)
 #   POST /synthesize/raw    - Generate speech (returns raw binary audio)
 #
-# Usage:
-#   docker compose up -d
-#   docker compose logs -f voice-tts
+# Usage (run from server/ directory):
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml logs -f voice-tts
 
 services:
   voice-tts:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: voice-tts-server
     restart: unless-stopped
     
@@ -45,24 +45,24 @@ services:
       # Voice reference audio files
       # Place .wav files (approx 15-30s) here to be used as voice clones.
       # The server will scan this directory for available voices.
-      - ./voice_references:/app/voice_references
+      - ../voice_references:/app/voice_references
       
       # Generated audio output
       # Synthesized speech files are saved here.
-      - ./audio_output:/app/audio_output
+      - ../audio_output:/app/audio_output
       
       # Server logs
       # Persists application logs for debugging.
-      - ./logs:/app/logs
+      - ../logs:/app/logs
       
       # Model cache
       # Persists downloaded XTTS-v2 model weights (~2-3GB) to avoid
       # re-downloading on every restart.
-      - ./models:/app/models
+      - ../models:/app/models
       
       # Training data (for fine-tuning)
       # Mounts the training data directory for finetune_xtts.py
-      # - ./training_data:/app/training_data
+      # - ../training_data:/app/training_data
     
     # Environment variables
     environment:

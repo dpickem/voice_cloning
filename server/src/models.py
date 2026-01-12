@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Shared Pydantic models for TTS servers.
+Shared Pydantic models for TTS servers and training.
 
 Provides request/response models used by both the zero-shot and fine-tuned
-TTS server implementations. Models include full type annotations and validation.
+TTS server implementations, as well as training configuration models.
+All models include full type annotations and validation.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from tts_config import settings
+from config import settings
 
 
 class TTSRequest(BaseModel):
@@ -105,3 +106,43 @@ class VoiceInfo(BaseModel):
 
     filename: str
     size_bytes: int
+
+
+# =============================================================================
+# Training/Fine-tuning Models
+# =============================================================================
+
+
+class Sample(BaseModel):
+    """A single training or evaluation sample."""
+
+    audio_file: str
+    text: str
+    speaker_name: str
+    language: str
+
+
+class DataConfig(BaseModel):
+    """Dataset paths and language configuration."""
+
+    audio_dir: str
+    train_csv: str
+    eval_csv: str
+    language: str
+
+
+class TrainingConfig(BaseModel):
+    """Training hyperparameters for fine-tuning."""
+
+    batch_size: int
+    eval_batch_size: int
+    num_epochs: int
+    learning_rate: float
+
+
+class FinetuneConfig(BaseModel):
+    """Top-level configuration for XTTS fine-tuning."""
+
+    data: DataConfig
+    training: TrainingConfig
+    output_path: str

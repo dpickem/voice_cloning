@@ -18,8 +18,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
+
+# Add src/ to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import torch
 
@@ -28,7 +32,7 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 
 from TTS.tts.configs.xtts_config import XttsConfig
 from TTS.tts.models.xtts import Xtts
-from data_models import FinetuneConfig, Sample
+from models import FinetuneConfig, Sample
 from trainer import Trainer, TrainerArgs
 
 

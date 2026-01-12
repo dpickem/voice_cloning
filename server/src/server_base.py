@@ -17,9 +17,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from tts_config import settings
-from tts_models import HealthResponse, TTSRequest, TTSResponse, VoiceInfo
-from tts_utils import (
+from config import settings
+from models import HealthResponse, TTSRequest, TTSResponse, VoiceInfo
+from utils import (
     calculate_duration,
     list_voice_files,
     validate_voice_path,

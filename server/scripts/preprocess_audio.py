@@ -15,9 +15,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+from pathlib import Path
 from typing import Final
 
-from audio_utils import (
+# Add src/ to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from audio import (
     DEFAULT_NOISE_REDUCTION,
     DEFAULT_SAMPLE_RATE,
     DEFAULT_TRIM_TOP_DB,

@@ -23,9 +23,9 @@ import uvicorn
 from fastapi import FastAPI
 from TTS.api import TTS
 
-from tts_config import settings
-from tts_models import HealthResponse, TTSResponse, VoiceInfo
-from tts_server_base import (
+from config import settings
+from models import HealthResponse, TTSResponse, VoiceInfo
+from server_base import (
     create_app,
     create_health_check,
     create_synthesize_endpoint,
@@ -37,7 +37,7 @@ from tts_server_base import (
     setup_directories,
     validate_cuda,
 )
-from tts_utils import ensure_numpy_array
+from utils import ensure_numpy_array
 
 if TYPE_CHECKING:
     import numpy as np
@@ -159,7 +159,7 @@ app.post("/synthesize/raw")(
 
 if __name__ == "__main__":
     uvicorn.run(
-        "tts_server:app",
+        "server:app",
         host=settings.HOST,
         port=settings.PORT,
         reload=False,
