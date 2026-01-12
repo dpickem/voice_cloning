@@ -53,8 +53,18 @@ COPY src/ .
 # Copy scripts (for preprocessing inside container)
 COPY scripts/preprocess_audio.py ./scripts/
 
-# Create directories for volumes
-RUN mkdir -p /app/voice_references /app/audio_output /app/logs /app/models
+# Create non-root user to avoid root-owned files in bind mounts
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} appuser && \
+    useradd -m -u ${UID} -g ${GID} appuser
+
+# Create directories for volumes with proper ownership
+RUN mkdir -p /app/voice_references /app/audio_output /app/logs /app/models && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

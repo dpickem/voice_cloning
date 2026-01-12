@@ -20,6 +20,11 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        # Set to your host user's UID/GID to avoid root-owned files
+        # Find yours with: id -u and id -g
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     container_name: voice-tts-server
     restart: unless-stopped
     
