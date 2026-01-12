@@ -1,0 +1,26 @@
+# Voice Training Dataset - Metadata Format
+# =========================================
+#
+# This file maps audio clip filenames to their transcriptions.
+#
+# FORMAT: filename_without_extension|exact_transcription
+#
+# RULES:
+# - Each line contains one clip: clip_XXX|The text that was spoken.
+# - Filename should NOT include the .wav extension
+# - Transcription must match the spoken audio EXACTLY
+# - Include punctuation as appropriate (periods, commas, question marks)
+# - Do NOT include filler words unless actually spoken ("um", "uh")
+#
+# RECORDING TIPS:
+# - Keep each clip 3-15 seconds long
+# - Record in a quiet room with minimal echo
+# - Maintain consistent microphone distance (6-12 inches)
+# - Speak naturally at your normal pace
+# - Take breaks every 10-15 minutes to avoid fatigue
+#
+# EXAMPLE ENTRIES:
+clip_001|The quick brown fox jumps over the lazy dog.
+clip_002|Hello, my name is Daniel, and I'm recording this voice sample.
+clip_003|Would you like to proceed with the installation?
+clip_004|That's absolutely incredible! I can't believe it worked!

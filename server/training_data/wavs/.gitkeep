@@ -1,0 +1,3 @@
+# Place raw training audio clips here
+# Each clip should be named clip_001.wav, clip_002.wav, etc.
+# Corresponding transcriptions go in ../metadata.csv
