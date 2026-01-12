@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# Environment
+.env
+*.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audio files (keep templates, ignore generated)
+server/audio_output/*.wav
+!server/audio_output/.gitkeep
+
+# Model weights (too large for git)
+server/models/*
+!server/models/.gitkeep
+
+# Logs
+server/logs/*.log
+!server/logs/.gitkeep
+
+# Voice references - keep the directory but ignore large audio files
+# Uncomment if you want to track voice references:
+# !server/voice_references/*.wav
+
+# Fine-tuning data (too large for git)
+server/training_data/wavs/*.wav
+!server/training_data/wavs/.gitkeep
+server/training_data/processed/*.wav
+!server/training_data/processed/.gitkeep
+server/training_data/metadata.csv
+server/training_data/metadata_train.csv
+server/training_data/metadata_eval.csv
+
+# Fine-tuned model checkpoints (too large for git)
+server/finetuned_model/*
+!server/finetuned_model/.gitkeep
