@@ -8,9 +8,20 @@ This script handles the complete fine-tuning process:
 3. Run training loop
 4. Save fine-tuned model
 
-Usage:
-    python finetune_xtts.py --config finetune_config.json
-    python finetune_xtts.py --config finetune_config.json --resume /path/to/checkpoint
+Usage (from server/ directory):
+    python scripts/finetune_xtts.py --config config/finetune_config.json
+    python scripts/finetune_xtts.py --config config/finetune_config.json --resume /path/to/checkpoint
+
+File structure:
+    server/
+    ├── config/
+    │   └── finetune_config.json    # Training configuration
+    ├── scripts/
+    │   └── finetune_xtts.py        # This script
+    ├── training_data/
+    │   ├── metadata.csv            # Audio file list (filename|text)
+    │   └── wavs/                   # Audio files referenced in metadata.csv
+    └── finetuned_model/            # Output directory for trained model
 """
 
 from __future__ import annotations
@@ -277,28 +288,55 @@ def get_model_directory() -> Path:
     """
     Get the XTTS-v2 model cache directory.
 
+    Checks locations in order:
+    1. TTS_HOME environment variable (Docker: /app/models)
+    2. Default TTS cache (~/.local/share/tts)
+
     Returns:
-        Path to the model directory based on TTS_HOME environment variable.
+        Path to the model directory.
     """
-    tts_home = os.getenv("TTS_HOME", "/app/models")
-    return Path(tts_home) / "tts_models--multilingual--multi-dataset--xtts_v2"
+    model_subdir = "tts_models--multilingual--multi-dataset--xtts_v2"
+
+    # Check TTS_HOME first (used in Docker)
+    tts_home = os.getenv("TTS_HOME")
+    if tts_home:
+        model_dir = Path(tts_home) / model_subdir
+        if (model_dir / "config.json").exists():
+            return model_dir
+
+    # Check default TTS cache location (local development)
+    default_cache = Path.home() / ".local" / "share" / "tts" / model_subdir
+    if (default_cache / "config.json").exists():
+        return default_cache
+
+    # Return TTS_HOME path if set, otherwise default cache (for downloading)
+    if tts_home:
+        return Path(tts_home) / model_subdir
+    return default_cache
 
 
-def ensure_model_downloaded(model_dir: Path) -> None:
+def ensure_model_downloaded(model_dir: Path) -> Path:
     """
     Download the XTTS-v2 model if not already cached.
 
     Args:
         model_dir: Expected model cache directory.
+
+    Returns:
+        Path to the actual model directory (may differ if TTS downloads elsewhere).
     """
     model_config_path = model_dir / "config.json"
     if not model_config_path.exists():
         print(f"Model config not found at {model_config_path}")
-        print("Downloading model first...")
+        print("Downloading model via TTS...")
         # Import here to avoid loading TTS unless needed
         from TTS.api import TTS
-        TTS("tts_models/multilingual/multi-dataset/xtts_v2")
-        print("Model downloaded.")
+        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+        # Get actual model path from TTS manager
+        actual_path = Path(tts.synthesizer.tts_model.config.model_dir)
+        print(f"Model downloaded to: {actual_path}")
+        return actual_path
+    return model_dir
 
 
 # =============================================================================
@@ -338,7 +376,8 @@ def main() -> None:
 
     # Get and verify model
     model_dir = get_model_directory()
-    ensure_model_downloaded(model_dir)
+    model_dir = ensure_model_downloaded(model_dir)
+    print(f"Using model from: {model_dir}")
 
     # Load XTTS config and model
     print("\nLoading pre-trained XTTS-v2 model...")
