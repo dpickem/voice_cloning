@@ -95,11 +95,17 @@ class TTSSettings(BaseSettings):
     # =========================================================================
     # MODEL SETTINGS
     # =========================================================================
-    # Model identifier for zero-shot TTS (Coqui TTS model path)
+    # TTS model backend to use: xtts, f5-tts, chatterbox, openvoice
+    TTS_BACKEND: str = "xtts"
+
+    # Model identifier for XTTS (only used when TTS_BACKEND=xtts)
     TTS_MODEL: str = "tts_models/multilingual/multi-dataset/xtts_v2"
 
     # Default audio sample rate in Hz
     DEFAULT_SAMPLE_RATE: int = 22050
+
+    # Whether to allow model switching via API (if False, only TTS_BACKEND is used)
+    ALLOW_MODEL_SWITCHING: bool = True
 
     # =========================================================================
     # PYDANTIC SETTINGS CONFIG

@@ -9,11 +9,21 @@ All models include full type annotations and validation.
 
 from __future__ import annotations
 
-from typing import Optional
+from enum import Enum
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from config import settings
+
+
+class ModelType(str, Enum):
+    """Supported TTS model types."""
+
+    XTTS = "xtts"
+    F5_TTS = "f5-tts"
+    CHATTERBOX = "chatterbox"
+    OPENVOICE = "openvoice"
 
 
 class TTSRequest(BaseModel):
@@ -27,6 +37,10 @@ class TTSRequest(BaseModel):
                   Defaults to English.
         voice: Filename of the voice reference WAV file to use for cloning.
                Must exist in the voice references directory.
+        model: TTS model backend to use (xtts, f5-tts, chatterbox, openvoice).
+               If not specified, uses the server's default model.
+        reference_text: Transcript of reference audio (required for F5-TTS,
+                       optional for others).
     """
 
     text: str = Field(
@@ -42,6 +56,14 @@ class TTSRequest(BaseModel):
     voice: str = Field(
         default=settings.DEFAULT_VOICE,
         description="Voice reference filename (must be a WAV file)",
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description="TTS model to use: xtts, f5-tts, chatterbox, openvoice (default: server config)",
+    )
+    reference_text: Optional[str] = Field(
+        default=None,
+        description="Transcript of reference audio (required for F5-TTS)",
     )
 
 
@@ -76,8 +98,10 @@ class HealthResponse(BaseModel):
     Attributes:
         status: Current server health status ('healthy' or 'unhealthy').
         model_loaded: Whether the TTS model is loaded and ready.
-        model_type: Type of loaded model ('zero-shot' or 'fine-tuned').
-                    Optional for backward compatibility.
+        model_type: Type of loaded model (e.g., 'xtts', 'f5-tts').
+        model_name: Display name of the loaded model.
+        default_model: The server's default model type.
+        available_models: List of available model types.
         gpu_available: Whether CUDA GPU acceleration is available.
         gpu_name: Name of the GPU device, or None if unavailable.
         cuda_version: CUDA toolkit version, or None if unavailable.
@@ -88,11 +112,36 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     model_type: Optional[str] = None
+    model_name: Optional[str] = None
+    default_model: Optional[str] = None
+    available_models: Optional[list[str]] = None
     gpu_available: bool
     gpu_name: Optional[str] = None
     cuda_version: Optional[str] = None
     container: bool
     timestamp: str
+
+
+class ModelInfo(BaseModel):
+    """
+    Information about a TTS model backend.
+
+    Attributes:
+        model_type: Model identifier (e.g., 'xtts', 'f5-tts').
+        display_name: Human-readable model name.
+        loaded: Whether this model is currently loaded.
+        supports_languages: List of supported language codes.
+        requires_reference_text: Whether reference transcript is needed.
+        available: Whether the model dependencies are installed.
+    """
+
+    model_type: str
+    display_name: str
+    loaded: bool = False
+    supports_languages: list[str] = []
+    requires_reference_text: bool = False
+    available: bool = True
+    error: Optional[str] = None
 
 
 class VoiceInfo(BaseModel):

@@ -392,6 +392,38 @@ def ensure_model_downloaded(model_dir: Path) -> Path:
     return model_dir
 
 
+def ensure_training_files(model_dir: Path) -> None:
+    """
+    Download additional files required for XTTS fine-tuning.
+
+    The standard TTS download doesn't include mel_stats.pth and dvae.pth
+    which are required by GPTTrainer. Downloads them from HuggingFace.
+
+    Args:
+        model_dir: Path to the XTTS model directory.
+    """
+    import urllib.request
+
+    # Files required for training but not in standard download
+    training_files = {
+        "mel_stats.pth": "https://huggingface.co/coqui/XTTS-v2/resolve/main/mel_stats.pth",
+        "dvae.pth": "https://huggingface.co/coqui/XTTS-v2/resolve/main/dvae.pth",
+    }
+
+    for filename, url in training_files.items():
+        filepath = model_dir / filename
+        if not filepath.exists():
+            print(f"Downloading {filename} for training...")
+            try:
+                urllib.request.urlretrieve(url, filepath)
+                print(f"  Downloaded: {filepath}")
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to download {filename} from {url}: {e}\n"
+                    f"Please download manually and place in {model_dir}"
+                )
+
+
 # =============================================================================
 # Main Entry Point
 # =============================================================================
@@ -432,6 +464,7 @@ def main() -> None:
     # Get and verify model
     model_dir = get_model_directory()
     model_dir = ensure_model_downloaded(model_dir)
+    ensure_training_files(model_dir)
     print(f"Using model from: {model_dir}")
 
     # Prepare datasets first to get train/eval splits

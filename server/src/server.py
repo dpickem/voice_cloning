@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Voice Cloning TTS API Server (Zero-Shot).
+Voice Cloning TTS API Server (Multi-Model).
 
-FastAPI server that provides text-to-speech synthesis using XTTS-v2
-with zero-shot voice cloning. Requires NVIDIA GPU with CUDA support.
+FastAPI server that provides text-to-speech synthesis with zero-shot
+voice cloning. Supports multiple TTS backends:
+- XTTS v2 (Coqui TTS) - default
+- F5-TTS
+- Chatterbox (Resemble AI)
+- OpenVoice (MyShell)
+
+Requires NVIDIA GPU with CUDA support.
 
 Endpoints:
     POST /synthesize     - Convert text to speech (returns base64 JSON)
     POST /synthesize/raw - Convert text to speech (returns WAV bytes)
-    GET  /health         - Health check with GPU status
+    GET  /health         - Health check with GPU and model status
     GET  /voices         - List available voice references
+    GET  /models         - List available TTS models
 """
 
 from __future__ import annotations
@@ -17,45 +24,97 @@ from __future__ import annotations
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import TYPE_CHECKING, AsyncIterator, Optional
 
+import torch
 import uvicorn
-from fastapi import FastAPI
-from TTS.api import TTS
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from config import settings
-from models import HealthResponse, TTSResponse, VoiceInfo
-from server_base import (
-    create_app,
-    create_health_check,
-    create_synthesize_endpoint,
-    create_synthesize_raw_endpoint,
-    list_voices,
-    print_gpu_info,
-    print_server_ready,
-    print_voice_references,
-    setup_directories,
-    validate_cuda,
+from models import HealthResponse, ModelInfo, TTSRequest, TTSResponse, VoiceInfo
+from tts_backends import ModelType, TTSBackend, get_available_backends, get_backend
+from utils import (
+    calculate_duration,
+    ensure_numpy_array,
+    list_voice_files,
+    validate_voice_path,
+    wav_to_base64,
+    wav_to_bytes,
 )
-from utils import ensure_numpy_array
 
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
 
-# Global TTS instance (initialized on startup)
-_model: Optional[TTS] = None
+# =============================================================================
+# Constants
+# =============================================================================
 
-MODEL_TYPE = "zero-shot"
+PRINT_SEPARATOR_WIDTH = 60
+BYTES_TO_GB = 1e9
+
+# =============================================================================
+# Global State
+# =============================================================================
+
+# Currently loaded backend (initialized on startup)
+_current_backend: Optional[TTSBackend] = None
+
+# Cache of loaded backends (for model switching)
+_backend_cache: dict[str, TTSBackend] = {}
+
+
+# =============================================================================
+# Backend Management
+# =============================================================================
+
+
+def _get_or_load_backend(model_type: str) -> TTSBackend:
+    """
+    Get a backend, loading it if necessary.
+
+    Uses caching to avoid reloading models when switching.
+
+    Args:
+        model_type: Model type string (e.g., 'xtts', 'f5-tts').
+
+    Returns:
+        Loaded backend instance.
+    """
+    global _backend_cache
+
+    if model_type in _backend_cache:
+        backend = _backend_cache[model_type]
+        if backend.is_loaded:
+            return backend
+
+    # Create and load new backend
+    backend = get_backend(model_type)
+    backend.load()
+    _backend_cache[model_type] = backend
+
+    return backend
 
 
 def _is_model_loaded() -> bool:
-    """Check if the TTS model is loaded."""
-    return _model is not None
+    """Check if any TTS model is loaded."""
+    return _current_backend is not None and _current_backend.is_loaded
+
+
+# =============================================================================
+# Synthesis
+# =============================================================================
 
 
 async def _synthesize_audio(
-    text: str, voice_path: str, language: str
+    text: str,
+    voice_path: str,
+    language: str,
+    model_type: Optional[str] = None,
+    reference_text: Optional[str] = None,
 ) -> tuple[NDArray[np.floating], int]:
     """
     Run TTS synthesis in a thread pool to avoid blocking.
@@ -64,30 +123,76 @@ async def _synthesize_audio(
         text: Text content to synthesize.
         voice_path: Path to the voice reference WAV file.
         language: Language code for synthesis.
+        model_type: Model to use (None = default).
+        reference_text: Reference audio transcript (for F5-TTS).
 
     Returns:
         Tuple of (waveform array, sample rate).
-
-    Raises:
-        RuntimeError: If the TTS model is not loaded.
     """
-    if _model is None:
-        raise RuntimeError("TTS model not loaded")
+    global _current_backend
 
+    # Determine which backend to use
+    if model_type and settings.ALLOW_MODEL_SWITCHING:
+        backend = _get_or_load_backend(model_type)
+    elif _current_backend is None:
+        raise RuntimeError("No TTS model loaded")
+    else:
+        backend = _current_backend
+
+    # Validate reference text requirement
+    if backend.requires_reference_text and not reference_text:
+        raise ValueError(
+            f"{backend.display_name} requires reference_text (transcript of reference audio)"
+        )
+
+    # Run synthesis in thread pool
     loop = asyncio.get_event_loop()
-    wav = await loop.run_in_executor(
+    wav, sample_rate = await loop.run_in_executor(
         None,
-        lambda: _model.tts(
+        lambda: backend.synthesize(
             text=text,
-            speaker_wav=voice_path,
+            reference_audio=voice_path,
             language=language,
+            reference_text=reference_text,
         ),
     )
 
     wav = ensure_numpy_array(wav)
-    sample_rate: int = _model.synthesizer.output_sample_rate
-
     return wav, sample_rate
+
+
+# =============================================================================
+# Server Lifecycle
+# =============================================================================
+
+
+def _print_gpu_info() -> None:
+    """Print GPU information to stdout."""
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"CUDA version: {torch.version.cuda}")
+    print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / BYTES_TO_GB:.1f} GB")
+
+
+def _validate_cuda() -> None:
+    """Validate CUDA availability."""
+    if not torch.cuda.is_available():
+        print("ERROR: CUDA is not available.")
+        print("This server requires an NVIDIA GPU with CUDA support.")
+        raise SystemExit(1)
+
+
+def _setup_directories() -> None:
+    """Ensure required directories exist."""
+    settings.VOICE_REFERENCES_DIR.mkdir(exist_ok=True, parents=True)
+    settings.AUDIO_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+
+
+def _print_voice_references() -> None:
+    """Print available voice references."""
+    voices = list_voice_files(settings.VOICE_REFERENCES_DIR)
+    print(f"\nVoice references available: {len(voices)}")
+    for v in voices:
+        print(f"  - {v.filename}")
 
 
 @asynccontextmanager
@@ -95,67 +200,209 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     Manage application lifecycle - load model on startup.
 
-    Initializes the XTTS-v2 model with GPU acceleration.
-    Requires CUDA to be available.
-
-    Args:
-        app: The FastAPI application instance.
-
-    Yields:
-        Control to the application after model initialization.
-
-    Raises:
-        SystemExit: If CUDA is not available.
+    Initializes the default TTS backend with GPU acceleration.
     """
-    global _model
+    global _current_backend
 
-    print("=" * 60)
-    print("Voice Cloning TTS Server (Zero-Shot)")
-    print("=" * 60)
+    print("=" * PRINT_SEPARATOR_WIDTH)
+    print("Voice Cloning TTS Server (Multi-Model)")
+    print("=" * PRINT_SEPARATOR_WIDTH)
 
-    validate_cuda()
-    print_gpu_info()
+    _validate_cuda()
+    _print_gpu_info()
 
-    print("\nLoading TTS model...")
+    # Load default backend
+    default_model = settings.TTS_BACKEND
+    print(f"\nLoading default TTS backend: {default_model}")
     start_time = time.time()
 
-    _model = TTS(settings.TTS_MODEL, gpu=True)
+    try:
+        _current_backend = _get_or_load_backend(default_model)
+        load_time = time.time() - start_time
+        print(f"✓ {_current_backend.display_name} loaded in {load_time:.2f}s")
+    except Exception as e:
+        print(f"✗ Failed to load {default_model}: {e}")
+        raise SystemExit(1)
 
-    load_time = time.time() - start_time
-    print(f"✓ Model loaded in {load_time:.2f}s")
+    _setup_directories()
+    _print_voice_references()
 
-    setup_directories()
-    print_voice_references()
-    print_server_ready()
+    # Print available models
+    print(f"\nAvailable models: {', '.join(m.value for m in ModelType)}")
+    if settings.ALLOW_MODEL_SWITCHING:
+        print("Model switching via API: enabled")
+    else:
+        print("Model switching via API: disabled")
+
+    print("=" * PRINT_SEPARATOR_WIDTH)
+    print(f"Server ready at {settings.server_url}")
+    print("=" * PRINT_SEPARATOR_WIDTH)
 
     yield
 
+    # Cleanup
     print("Shutting down TTS server...")
+    for backend in _backend_cache.values():
+        backend.unload()
+    _backend_cache.clear()
 
 
-# Create the FastAPI application
-app = create_app(
+# =============================================================================
+# FastAPI Application
+# =============================================================================
+
+app = FastAPI(
     title="Voice Cloning TTS API",
-    description="Text-to-speech synthesis with zero-shot voice cloning using XTTS-v2",
-    version="1.0.0",
+    description="Multi-model text-to-speech synthesis with zero-shot voice cloning",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# Register endpoints
-app.get("/health", response_model=HealthResponse)(
-    create_health_check(_is_model_loaded, MODEL_TYPE)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-app.get("/voices", response_model=list[VoiceInfo])(list_voices)
 
-app.post("/synthesize", response_model=TTSResponse)(
-    create_synthesize_endpoint(_is_model_loaded, _synthesize_audio, MODEL_TYPE)
-)
+# =============================================================================
+# Endpoints
+# =============================================================================
 
-app.post("/synthesize/raw")(
-    create_synthesize_raw_endpoint(_is_model_loaded, _synthesize_audio, MODEL_TYPE)
-)
 
+@app.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
+    """Check server health, GPU status, and model status."""
+    model_loaded = _is_model_loaded()
+    gpu_available = torch.cuda.is_available()
+
+    return HealthResponse(
+        status="healthy" if model_loaded else "unhealthy",
+        model_loaded=model_loaded,
+        model_type=_current_backend.model_type.value if _current_backend else None,
+        model_name=_current_backend.display_name if _current_backend else None,
+        default_model=settings.TTS_BACKEND,
+        available_models=[m.value for m in ModelType],
+        gpu_available=gpu_available,
+        gpu_name=torch.cuda.get_device_name(0) if gpu_available else None,
+        cuda_version=torch.version.cuda if gpu_available else None,
+        container=True,
+        timestamp=datetime.utcnow().isoformat(),
+    )
+
+
+@app.get("/voices", response_model=list[VoiceInfo])
+async def list_voices() -> list[VoiceInfo]:
+    """List available voice reference files."""
+    return list_voice_files(settings.VOICE_REFERENCES_DIR)
+
+
+@app.get("/models", response_model=list[ModelInfo])
+async def list_models() -> list[ModelInfo]:
+    """List available TTS models and their status."""
+    models = []
+    for info in get_available_backends():
+        is_loaded = info["model_type"] in _backend_cache and _backend_cache[info["model_type"]].is_loaded
+        models.append(ModelInfo(
+            model_type=info["model_type"],
+            display_name=info.get("display_name", info["model_type"]),
+            loaded=is_loaded,
+            supports_languages=info.get("supports_languages", []),
+            requires_reference_text=info.get("requires_reference_text", False),
+            available=info.get("available", True),
+            error=info.get("error"),
+        ))
+    return models
+
+
+@app.post("/synthesize", response_model=TTSResponse)
+async def synthesize(request: TTSRequest) -> TTSResponse:
+    """
+    Synthesize speech from text.
+
+    Returns JSON with base64-encoded audio.
+    """
+    if not _is_model_loaded():
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    voice_path = validate_voice_path(request.voice, settings.VOICE_REFERENCES_DIR)
+    start_time = time.time()
+
+    try:
+        wav, sample_rate = await _synthesize_audio(
+            text=request.text,
+            voice_path=str(voice_path),
+            language=request.language,
+            model_type=request.model,
+            reference_text=request.reference_text,
+        )
+
+        processing_time_ms = (time.time() - start_time) * 1000
+
+        # Determine model type used
+        model_used = request.model if request.model else settings.TTS_BACKEND
+
+        return TTSResponse(
+            success=True,
+            audio_base64=wav_to_base64(wav, sample_rate),
+            duration_seconds=calculate_duration(wav, sample_rate),
+            sample_rate=sample_rate,
+            processing_time_ms=processing_time_ms,
+            text_length=len(request.text),
+            model_type=model_used,
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Synthesis failed: {e!s}")
+
+
+@app.post("/synthesize/raw")
+async def synthesize_raw(request: TTSRequest) -> Response:
+    """
+    Synthesize speech from text.
+
+    Returns raw WAV audio bytes.
+    """
+    if not _is_model_loaded():
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    voice_path = validate_voice_path(request.voice, settings.VOICE_REFERENCES_DIR)
+
+    try:
+        wav, sample_rate = await _synthesize_audio(
+            text=request.text,
+            voice_path=str(voice_path),
+            language=request.language,
+            model_type=request.model,
+            reference_text=request.reference_text,
+        )
+
+        # Determine model type used
+        model_used = request.model if request.model else settings.TTS_BACKEND
+
+        return Response(
+            content=wav_to_bytes(wav, sample_rate),
+            media_type="audio/wav",
+            headers={
+                "X-Duration-Seconds": str(calculate_duration(wav, sample_rate)),
+                "X-Sample-Rate": str(sample_rate),
+                "X-Model-Type": model_used,
+            },
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Synthesis failed: {e!s}")
+
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
 
 if __name__ == "__main__":
     uvicorn.run(
