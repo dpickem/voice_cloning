@@ -337,15 +337,22 @@ def get_model_directory() -> Path:
     Get the XTTS-v2 model cache directory.
 
     Checks locations in order:
-    1. TTS_HOME environment variable (Docker: /app/models)
-    2. Default TTS cache (~/.local/share/tts)
+    1. server/models/tts/ directory (derived from script location)
+    2. TTS_HOME environment variable (Docker: /app/models)
+    3. Default TTS cache (~/.local/share/tts)
 
     Returns:
         Path to the model directory.
     """
     model_subdir = "tts_models--multilingual--multi-dataset--xtts_v2"
 
-    # Check TTS_HOME first (used in Docker)
+    # server/scripts/finetune_xtts.py -> server/models/tts/
+    server_dir = Path(__file__).resolve().parent.parent
+    local_models = server_dir / "models" / "tts" / model_subdir
+    if (local_models / "config.json").exists():
+        return local_models
+
+    # Check TTS_HOME (used in Docker)
     tts_home = os.getenv("TTS_HOME")
     if tts_home:
         model_dir = Path(tts_home) / model_subdir
@@ -357,10 +364,8 @@ def get_model_directory() -> Path:
     if (default_cache / "config.json").exists():
         return default_cache
 
-    # Return TTS_HOME path if set, otherwise default cache (for downloading)
-    if tts_home:
-        return Path(tts_home) / model_subdir
-    return default_cache
+    # Return local models path as preferred download location
+    return local_models
 
 
 def ensure_model_downloaded(model_dir: Path) -> Path:
