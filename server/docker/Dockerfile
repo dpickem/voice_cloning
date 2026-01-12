@@ -44,7 +44,8 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu121
 
 # Install remaining dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# --ignore-installed handles distutils packages (like blinker) that can't be cleanly uninstalled
+RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
 
 # Copy application source code
 COPY src/ .
