@@ -457,12 +457,6 @@ def main() -> None:
         gpt_use_perceiver_resampler=True,
     )
 
-    # Audio config matching XTTS requirements
-    audio_config = {
-        "sample_rate": XTTS_SAMPLE_RATE,
-        "output_sample_rate": XTTS_OUTPUT_SAMPLE_RATE,
-    }
-
     # Training configuration
     # Note: weight_decay is passed via optimizer_params, not as a direct argument
     trainer_config = GPTTrainerConfig(
@@ -495,11 +489,10 @@ def main() -> None:
     )
 
     # Initialize GPT trainer
+    # GPTTrainer gets model_args from the config, samples are set separately
     print("\nInitializing GPT trainer...")
     trainer = GPTTrainer(
-        trainer_config,
-        model_args=model_args,
-        audio_config=audio_config,
+        config=trainer_config,
         train_samples=train_samples,
         eval_samples=eval_samples,
     )
