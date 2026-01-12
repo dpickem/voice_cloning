@@ -26,16 +26,21 @@ from typing import Any
 # Add src/ to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import torch
-from torch.utils.data import random_split
-
 # Set environment variables before importing TTS
 os.environ["COQUI_TOS_AGREED"] = "1"
 
-from TTS.tts.configs.xtts_config import XttsConfig
-from TTS.tts.models.xtts import Xtts
 from models import FinetuneConfig, Sample
-from trainer import Trainer, TrainerArgs
+
+# Type alias for metadata entries: (filename, text, audio_path)
+MetadataEntry = tuple[str, str, Path]
+
+# Default speaker name for fine-tuned voice
+DEFAULT_SPEAKER_NAME = "custom_voice"
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
 
 
 def load_config(config_path: str) -> FinetuneConfig:
@@ -46,7 +51,7 @@ def load_config(config_path: str) -> FinetuneConfig:
         config_path: Path to the JSON configuration file.
 
     Returns:
-        FinetuneConfig instance containing data paths, training
+        FinetuneConfig instance with validated data paths, training
         hyperparameters, and output settings.
     """
     with open(config_path, "r") as f:
@@ -54,29 +59,79 @@ def load_config(config_path: str) -> FinetuneConfig:
     return FinetuneConfig.model_validate(config_dict)
 
 
-def split_and_save_metadata(
-    metadata_csv: str,
-    eval_ratio: float,
-    seed: int,
-) -> tuple[str, str]:
+# =============================================================================
+# Dataset Preparation
+# =============================================================================
+
+
+def load_valid_entries(
+    metadata_csv: Path | str,
+    audio_dir: Path | str,
+) -> tuple[list[MetadataEntry], int]:
     """
-    Split metadata CSV into train and eval sets, saving to separate files.
+    Load metadata CSV and filter to entries with existing audio files.
+
+    Reads a pipe-delimited CSV file with 'filename|text' format and returns
+    only entries where the corresponding .wav file exists in audio_dir.
 
     Args:
-        metadata_csv: Path to the source metadata CSV file.
-        eval_ratio: Fraction of data to use for evaluation (0.0-1.0).
+        metadata_csv: Path to the metadata CSV file.
+        audio_dir: Directory containing the audio .wav files.
+
+    Returns:
+        Tuple of (valid_entries, skipped_count) where valid_entries is a list
+        of (filename, text, audio_path) tuples.
+    """
+    audio_dir = Path(audio_dir)
+    entries: list[MetadataEntry] = []
+    skipped = 0
+
+    with open(metadata_csv, "r") as f:
+        reader = csv.reader(f, delimiter="|")
+        for row in reader:
+            if len(row) != 2:
+                continue
+            filename, text = row
+            audio_path = audio_dir / f"{filename}.wav"
+            if audio_path.exists():
+                entries.append((filename, text, audio_path))
+            else:
+                skipped += 1
+
+    return entries, skipped
+
+
+def split_entries(
+    entries: list[MetadataEntry],
+    eval_ratio: float,
+    seed: int,
+) -> tuple[list[MetadataEntry], list[MetadataEntry]]:
+    """
+    Split entries into training and evaluation sets.
+
+    Uses PyTorch's random_split for reproducible splitting. Ensures at least
+    one sample in the eval set when there are 2+ entries total.
+
+    Args:
+        entries: List of (filename, text, audio_path) tuples.
+        eval_ratio: Fraction of data for evaluation (0.0-1.0).
         seed: Random seed for reproducible splitting.
 
     Returns:
-        Tuple of (train_csv_path, eval_csv_path) for the generated files.
+        Tuple of (train_entries, eval_entries).
     """
-    with open(metadata_csv, "r") as f:
-        reader = csv.reader(f, delimiter="|")
-        entries = [row for row in reader if len(row) == 2]
+    # Import torch here to allow testing data loading functions without torch
+    import torch
+    from torch.utils.data import random_split
 
-    train_ratio = 1.0 - eval_ratio
-    train_size = int(len(entries) * train_ratio)
-    eval_size = len(entries) - train_size
+    total = len(entries)
+    eval_size = int(total * eval_ratio)
+    train_size = total - eval_size
+
+    # Ensure at least 1 eval sample if we have enough data
+    if eval_size == 0 and total > 1:
+        eval_size = 1
+        train_size = total - 1
 
     generator = torch.Generator().manual_seed(seed)
     train_subset, eval_subset = random_split(
@@ -86,90 +141,169 @@ def split_and_save_metadata(
     train_entries = [entries[i] for i in train_subset.indices]
     eval_entries = [entries[i] for i in eval_subset.indices]
 
-    # Write split files
-    train_csv = metadata_csv.replace(".csv", "_train.csv")
-    eval_csv = metadata_csv.replace(".csv", "_eval.csv")
+    return train_entries, eval_entries
+
+
+def save_split_csvs(
+    metadata_csv: Path | str,
+    train_entries: list[MetadataEntry],
+    eval_entries: list[MetadataEntry],
+) -> tuple[Path, Path]:
+    """
+    Save train and eval entries to separate CSV files.
+
+    Creates files named {metadata_csv}_train.csv and {metadata_csv}_eval.csv
+    in the same directory as the source metadata file.
+
+    Args:
+        metadata_csv: Path to the original metadata CSV (used to derive output paths).
+        train_entries: Training set entries.
+        eval_entries: Evaluation set entries.
+
+    Returns:
+        Tuple of (train_csv_path, eval_csv_path).
+    """
+    base_path = str(metadata_csv).replace(".csv", "")
+    train_csv = Path(f"{base_path}_train.csv")
+    eval_csv = Path(f"{base_path}_eval.csv")
 
     with open(train_csv, "w", newline="") as f:
         writer = csv.writer(f, delimiter="|")
-        writer.writerows(train_entries)
+        writer.writerows((fn, txt) for fn, txt, _ in train_entries)
 
     with open(eval_csv, "w", newline="") as f:
         writer = csv.writer(f, delimiter="|")
-        writer.writerows(eval_entries)
-
-    print(f"Dataset split (seed={seed}, eval_ratio={eval_ratio}):")
-    print(f"  Total entries: {len(entries)}")
-    print(f"  Training: {len(train_entries)} -> {train_csv}")
-    print(f"  Evaluation: {len(eval_entries)} -> {eval_csv}")
+        writer.writerows((fn, txt) for fn, txt, _ in eval_entries)
 
     return train_csv, eval_csv
 
 
-def prepare_dataset(config: FinetuneConfig) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def entries_to_samples(
+    entries: list[MetadataEntry],
+    language: str,
+    speaker_name: str = DEFAULT_SPEAKER_NAME,
+) -> list[dict[str, Any]]:
+    """
+    Convert metadata entries to Sample dictionaries for training.
+
+    Args:
+        entries: List of (filename, text, audio_path) tuples.
+        language: Language code (e.g., 'en').
+        speaker_name: Speaker identifier for the samples.
+
+    Returns:
+        List of Sample model dictionaries.
+    """
+    return [
+        Sample(
+            audio_file=str(audio_path),
+            text=text,
+            speaker_name=speaker_name,
+            language=language,
+        ).model_dump()
+        for _, text, audio_path in entries
+    ]
+
+
+def prepare_dataset(
+    config: FinetuneConfig,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Prepare training and evaluation datasets from metadata CSV.
 
-    Splits the metadata CSV into train/eval sets and creates sample
-    dictionaries for each valid audio file found.
+    Loads valid entries, splits them into train/eval sets, saves the split
+    CSV files for reference, and converts to Sample dictionaries.
 
     Args:
         config: Fine-tuning configuration containing data paths.
 
     Returns:
-        Tuple of (train_samples, eval_samples) where each is a list
-        of sample dictionaries with audio_file, text, speaker_name,
-        and language fields.
+        Tuple of (train_samples, eval_samples) for the Trainer.
+
+    Raises:
+        ValueError: If no valid audio files are found.
     """
-    # Split the dataset and save train/eval CSV files
-    train_csv, eval_csv = split_and_save_metadata(
-        config.data.metadata_csv,
-        config.data.eval_split_ratio,
-        config.data.random_seed,
+    # Load and filter entries
+    entries, skipped = load_valid_entries(
+        config.data.metadata_csv, config.data.audio_dir
     )
 
-    train_samples: list[dict[str, str]] = []
-    eval_samples: list[dict[str, str]] = []
+    if skipped > 0:
+        print(f"Note: Skipped {skipped} entries without audio files")
 
-    audio_dir = Path(config.data.audio_dir)
+    if not entries:
+        raise ValueError(f"No valid audio files found in {config.data.audio_dir}")
 
-    # Load training samples
-    with open(train_csv, "r") as f:
-        for line in f:
-            parts = line.strip().split("|")
-            if len(parts) == 2:
-                filename, text = parts
-                audio_path = audio_dir / f"{filename}.wav"
-                if audio_path.exists():
-                    sample = Sample(
-                        audio_file=str(audio_path),
-                        text=text,
-                        speaker_name="custom_voice",
-                        language=config.data.language,
-                    )
-                    train_samples.append(sample.model_dump())
+    # Split into train/eval
+    train_entries, eval_entries = split_entries(
+        entries, config.data.eval_split_ratio, config.data.random_seed
+    )
 
-    # Load eval samples
-    with open(eval_csv, "r") as f:
-        for line in f:
-            parts = line.strip().split("|")
-            if len(parts) == 2:
-                filename, text = parts
-                audio_path = audio_dir / f"{filename}.wav"
-                if audio_path.exists():
-                    sample = Sample(
-                        audio_file=str(audio_path),
-                        text=text,
-                        speaker_name="custom_voice",
-                        language=config.data.language,
-                    )
-                    eval_samples.append(sample.model_dump())
+    # Save split CSVs for reference
+    train_csv, eval_csv = save_split_csvs(
+        config.data.metadata_csv, train_entries, eval_entries
+    )
 
-    print(f"\nSamples with valid audio files:")
-    print(f"  Training: {len(train_samples)}")
-    print(f"  Evaluation: {len(eval_samples)}")
+    print(f"Dataset prepared (seed={config.data.random_seed}, "
+          f"eval_ratio={config.data.eval_split_ratio}):")
+    print(f"  Entries with audio: {len(entries)}")
+    print(f"  Training: {len(train_entries)} -> {train_csv}")
+    print(f"  Evaluation: {len(eval_entries)} -> {eval_csv}")
+
+    # Convert to Sample dictionaries
+    train_samples = entries_to_samples(train_entries, config.data.language)
+    eval_samples = entries_to_samples(eval_entries, config.data.language)
 
     return train_samples, eval_samples
+
+
+# =============================================================================
+# Model Loading
+# =============================================================================
+
+
+def print_gpu_info() -> None:
+    """Print GPU availability and specifications."""
+    import torch
+
+    print(f"GPU Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        print(f"VRAM: {vram_gb:.1f} GB")
+
+
+def get_model_directory() -> Path:
+    """
+    Get the XTTS-v2 model cache directory.
+
+    Returns:
+        Path to the model directory based on TTS_HOME environment variable.
+    """
+    tts_home = os.getenv("TTS_HOME", "/app/models")
+    return Path(tts_home) / "tts_models--multilingual--multi-dataset--xtts_v2"
+
+
+def ensure_model_downloaded(model_dir: Path) -> None:
+    """
+    Download the XTTS-v2 model if not already cached.
+
+    Args:
+        model_dir: Expected model cache directory.
+    """
+    model_config_path = model_dir / "config.json"
+    if not model_config_path.exists():
+        print(f"Model config not found at {model_config_path}")
+        print("Downloading model first...")
+        # Import here to avoid loading TTS unless needed
+        from TTS.api import TTS
+        TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+        print("Model downloaded.")
+
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
 
 
 def main() -> None:
@@ -179,6 +313,11 @@ def main() -> None:
     Parses command-line arguments, loads configuration, initializes
     the model, prepares datasets, and runs the training loop.
     """
+    # Delayed imports for TTS components (heavy dependencies)
+    from TTS.tts.configs.xtts_config import XttsConfig
+    from TTS.tts.models.xtts import Xtts
+    from trainer import Trainer, TrainerArgs
+
     parser = argparse.ArgumentParser(description="Fine-tune XTTS-v2")
     parser.add_argument("--config", default="finetune_config.json", help="Config file")
     parser.add_argument("--resume", default=None, help="Resume from checkpoint")
@@ -190,35 +329,23 @@ def main() -> None:
     print("=" * 60)
     print("XTTS-v2 Fine-Tuning")
     print("=" * 60)
-    print(f"GPU Available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+    print_gpu_info()
     print("=" * 60)
 
     # Create output directory
     output_path = Path(config.output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Get TTS model cache directory
-    tts_home: str = os.getenv("TTS_HOME", "/app/models")
-    model_dir = Path(tts_home) / "tts_models--multilingual--multi-dataset--xtts_v2"
+    # Get and verify model
+    model_dir = get_model_directory()
+    ensure_model_downloaded(model_dir)
 
     # Load XTTS config and model
     print("\nLoading pre-trained XTTS-v2 model...")
-
-    model_config_path = model_dir / "config.json"
-    if not model_config_path.exists():
-        print(f"Model config not found at {model_config_path}")
-        print("Downloading model first...")
-        from TTS.api import TTS
-        TTS("tts_models/multilingual/multi-dataset/xtts_v2")
-        print("Model downloaded.")
-
     model_config = XttsConfig()
-    model_config.load_json(str(model_config_path))
+    model_config.load_json(str(model_dir / "config.json"))
 
-    # Update config with fine-tuning parameters
+    # Apply fine-tuning parameters
     model_config.batch_size = config.training.batch_size
     model_config.eval_batch_size = config.training.eval_batch_size
     model_config.num_epochs = config.training.num_epochs
@@ -227,11 +354,7 @@ def main() -> None:
 
     # Initialize model
     model: Xtts = Xtts.init_from_config(model_config)
-    model.load_checkpoint(
-        model_config,
-        checkpoint_dir=str(model_dir),
-        use_deepspeed=False
-    )
+    model.load_checkpoint(model_config, checkpoint_dir=str(model_dir), use_deepspeed=False)
 
     # Prepare datasets
     print("\nPreparing datasets...")
@@ -240,7 +363,7 @@ def main() -> None:
     if len(train_samples) < 10:
         print("⚠️  Warning: Very few training samples. Results may be poor.")
 
-    # Setup trainer
+    # Setup and run trainer
     trainer_args = TrainerArgs(
         restore_path=args.resume,
         skip_train_epoch=False,
@@ -256,7 +379,6 @@ def main() -> None:
         eval_samples=eval_samples,
     )
 
-    # Start training
     print("\nStarting fine-tuning...")
     print(f"Output directory: {output_path}")
     print(f"Training for {config.training.num_epochs} epochs")

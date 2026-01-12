@@ -38,14 +38,14 @@ server/logs/*.log
 # Uncomment if you want to track voice references:
 # !server/voice_references/*.wav
 
+# Training data (too large for git)
+data/training/wavs/
+data/training/processed/
+data/voice_references/
+
 # Fine-tuning data (too large for git)
-server/training_data/wavs/*.wav
-!server/training_data/wavs/.gitkeep
-server/training_data/processed/*.wav
-!server/training_data/processed/.gitkeep
-server/training_data/metadata.csv
-server/training_data/metadata_train.csv
-server/training_data/metadata_eval.csv
+server/training_data/
+server/voice_references/
 
 # Fine-tuned model checkpoints (too large for git)
 server/finetuned_model/*
