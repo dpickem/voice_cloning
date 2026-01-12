@@ -1,0 +1,27 @@
+{
+    "model": "tts_models/multilingual/multi-dataset/xtts_v2",
+    "output_path": "finetuned_model/",
+    "training": {
+        "batch_size": 2,
+        "eval_batch_size": 2,
+        "num_epochs": 50,
+        "learning_rate": 5e-6,
+        "learning_rate_scheduler": "cosine",
+        "warmup_steps": 500,
+        "gradient_accumulation_steps": 4,
+        "max_audio_length": 11,
+        "save_checkpoint_every_n_epochs": 10,
+        "keep_last_n_checkpoints": 3
+    },
+    "data": {
+        "train_csv": "training_data/metadata_train.csv",
+        "eval_csv": "training_data/metadata_eval.csv",
+        "audio_dir": "training_data/processed/",
+        "language": "en",
+        "sample_rate": 22050
+    },
+    "logging": {
+        "log_every_n_steps": 50,
+        "eval_every_n_epochs": 5
+    }
+}

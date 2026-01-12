@@ -50,3 +50,6 @@ server/training_data/metadata_eval.csv
 # Fine-tuned model checkpoints (too large for git)
 server/finetuned_model/*
 !server/finetuned_model/.gitkeep
+
+# Cursor rules.
+.cursor/
