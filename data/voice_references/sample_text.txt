@@ -1,0 +1,22 @@
+# Sample Text for Zero-Shot Voice Cloning Reference Audio
+# Read this text aloud at a natural pace (approximately 15-30 seconds)
+# Record in a quiet environment with consistent volume
+
+---
+
+The quick brown fox jumped over the lazy dog near the old oak tree. 
+Yesterday afternoon, I walked through the beautiful garden and watched 
+the colorful butterflies dance among the flowers. Technology has changed 
+our world in remarkable ways, from how we communicate to how we learn 
+new things every single day. Please remember to speak clearly and 
+maintain a steady rhythm throughout the recording.
+
+---
+
+# Tips for recording:
+# - Use a good quality microphone
+# - Minimize background noise
+# - Speak naturally, don't rush
+# - Keep consistent distance from the microphone
+# - Aim for 15-30 seconds of clear audio
+# - Save as WAV format (16kHz or higher sample rate recommended)

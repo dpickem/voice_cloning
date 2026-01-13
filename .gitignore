@@ -42,7 +42,7 @@ server/logs/*.log
 # Training data (too large for git)
 data/training/wavs/
 data/training/processed/
-data/voice_references/
+data/voice_references/*.wav
 
 # Fine-tuning data (too large for git)
 server/training_data/
