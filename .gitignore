@@ -23,6 +23,7 @@ ENV/
 Thumbs.db
 
 # Audio files (keep templates, ignore generated)
+server/*.wav
 server/audio_output/*.wav
 !server/audio_output/.gitkeep
 
