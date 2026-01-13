@@ -50,7 +50,7 @@ services:
       # Voice reference audio files
       # Place .wav files (approx 15-30s) here to be used as voice clones.
       # The server will scan this directory for available voices.
-      - ../voice_references:/app/voice_references
+      - ../../data/voice_references:/app/voice_references
       
       # Generated audio output
       # Synthesized speech files are saved here.
@@ -65,9 +65,11 @@ services:
       # re-downloading on every restart.
       - ../models:/app/models
       
+      # Fine-tuned model output
+      - ../finetuned_model:/app/finetuned_model
+      
       # Training data (for fine-tuning)
-      # Mounts the training data directory for finetune_xtts.py
-      # - ../training_data:/app/training_data
+      - ../../data/training:/app/training_data
     
     # Environment variables
     environment:
@@ -85,6 +87,11 @@ services:
       
       # External hostname/IP for remote API access
       - EXTERNAL_HOST=${EXTERNAL_HOST:-10.111.79.180}
+      
+      # Directory paths (override defaults for Docker)
+      - VOICE_REFERENCES_DIR=/app/voice_references
+      - AUDIO_OUTPUT_DIR=/app/audio_output
+      - FINETUNED_MODEL_DIR=/app/finetuned_model
     
     # Logging configuration
     # Limits log file size to prevent disk filling
