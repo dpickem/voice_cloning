@@ -82,6 +82,9 @@ services:
       
       # Force Python stdout/stderr to be unbuffered (logs show up immediately)
       - PYTHONUNBUFFERED=1
+      
+      # External hostname/IP for remote API access
+      - EXTERNAL_HOST=${EXTERNAL_HOST:-10.111.79.180}
     
     # Logging configuration
     # Limits log file size to prevent disk filling

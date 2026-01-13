@@ -87,10 +87,19 @@ class TTSSettings(BaseSettings):
     # Server port number
     PORT: int = 8080
 
+    # External hostname/IP for remote access (used in logs and URLs)
+    # Set this to your server's IP address for remote access
+    EXTERNAL_HOST: str = "localhost"
+
     @property
     def server_url(self) -> str:
-        """Constructed server URL for reference."""
+        """Constructed server URL for local access."""
         return f"http://{self.HOST}:{self.PORT}"
+
+    @property
+    def external_url(self) -> str:
+        """Constructed server URL for remote access."""
+        return f"http://{self.EXTERNAL_HOST}:{self.PORT}"
 
     # =========================================================================
     # MODEL SETTINGS

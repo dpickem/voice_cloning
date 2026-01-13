@@ -51,13 +51,29 @@ class XTTSBackend(TTSBackend):
         if self._loaded:
             return
 
-        from TTS.api import TTS
+        # PyTorch 2.6+ changed weights_only default to True, breaking XTTS checkpoint loading
+        # Workaround: Patch torch.load to use weights_only=False for TTS model loading
+        import torch
+        _original_torch_load = torch.load
 
-        print(f"Loading {self.display_name}...")
-        self._model = TTS(XTTS_MODEL_NAME, gpu=True)
-        self._sample_rate = self._model.synthesizer.output_sample_rate
-        self._loaded = True
-        print(f"✓ {self.display_name} loaded")
+        def _patched_torch_load(*args, **kwargs):
+            if "weights_only" not in kwargs:
+                kwargs["weights_only"] = False
+            return _original_torch_load(*args, **kwargs)
+
+        torch.load = _patched_torch_load
+
+        try:
+            from TTS.api import TTS
+
+            print(f"Loading {self.display_name}...")
+            self._model = TTS(XTTS_MODEL_NAME, gpu=True)
+            self._sample_rate = self._model.synthesizer.output_sample_rate
+            self._loaded = True
+            print(f"✓ {self.display_name} loaded")
+        finally:
+            # Restore original torch.load
+            torch.load = _original_torch_load
 
     def unload(self) -> None:
         """Unload XTTS model from memory."""

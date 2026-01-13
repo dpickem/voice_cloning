@@ -234,6 +234,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     print("=" * PRINT_SEPARATOR_WIDTH)
     print(f"Server ready at {settings.server_url}")
+    if settings.EXTERNAL_HOST != "localhost":
+        print(f"Remote access: {settings.external_url}")
     print("=" * PRINT_SEPARATOR_WIDTH)
 
     yield
