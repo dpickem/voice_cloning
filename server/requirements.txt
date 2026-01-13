@@ -1,8 +1,10 @@
 # =============================================================================
 # Core Dependencies (required)
 # =============================================================================
-torch>=2.0.0
-torchaudio>=2.0.0
+# Pin exact torch versions - installed first in Dockerfile with CUDA support
+# These pins prevent other packages from upgrading torch
+torch==2.1.0
+torchaudio==2.1.0
 
 # API Server
 fastapi>=0.104.0
@@ -30,8 +32,9 @@ TTS>=0.22.0
 transformers>=4.33.0,<4.40.0
 
 # F5-TTS - high quality zero-shot voice cloning
-# Note: F5-TTS is flexible with transformers version
-f5-tts
+# DISABLED: F5-TTS pulls in torchcodec which has FFmpeg/PyTorch version conflicts
+# Uncomment if you want to use F5-TTS and are willing to debug the dependencies
+# f5-tts
 
 # Chatterbox (Resemble AI) - INCOMPATIBLE with XTTS
 # Requires transformers==4.46.3 which conflicts with XTTS's transformers<4.40.0

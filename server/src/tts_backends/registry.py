@@ -15,7 +15,8 @@ from tts_backends.base import ModelType, TTSBackend
 # Backend class registry (lazy imports to avoid loading unused dependencies)
 _BACKEND_REGISTRY: dict[ModelType, str] = {
     ModelType.XTTS: "tts_backends.xtts_backend.XTTSBackend",
-    ModelType.F5_TTS: "tts_backends.f5tts_backend.F5TTSBackend",
+    # F5-TTS disabled due to torchcodec/FFmpeg dependency conflicts
+    # ModelType.F5_TTS: "tts_backends.f5tts_backend.F5TTSBackend",
 }
 
 

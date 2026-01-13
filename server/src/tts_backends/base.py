@@ -20,7 +20,8 @@ class ModelType(str, Enum):
     """Supported TTS model types."""
 
     XTTS = "xtts"
-    F5_TTS = "f5-tts"
+    # F5_TTS disabled due to torchcodec/FFmpeg dependency conflicts
+    # F5_TTS = "f5-tts"
 
     @classmethod
     def from_string(cls, value: str) -> "ModelType":

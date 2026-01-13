@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-TTS Backend implementations for multiple voice cloning models.
+TTS Backend implementations for voice cloning models.
 
-Provides a unified interface for different TTS models:
+Currently available:
 - XTTS v2 (Coqui TTS)
-- F5-TTS
 
 Usage:
     from tts_backends import get_backend, TTSBackend, ModelType
 
-    backend = get_backend(ModelType.F5_TTS)
+    backend = get_backend(ModelType.XTTS)
     backend.load()
     wav, sr = backend.synthesize("Hello world", "reference.wav", "en")
 """
