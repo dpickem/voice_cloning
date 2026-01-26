@@ -1,10 +1,17 @@
 # Voice Training Dataset
 
-This dataset contains 100 diverse text snippets designed for recording voice samples to fine-tune an XTTS-v2 voice cloning model.
+This dataset contains 100 diverse text snippets designed for recording voice samples to fine-tune a voice cloning model.
+
+> **Updated January 2026:** Now supports **Qwen3-TTS** (SOTA) in addition to XTTS-v2.
 
 ## Purpose
 
-Zero-shot voice cloning (using ~15-30 seconds of reference audio) produces good results, but fine-tuning on a larger, diverse dataset yields significantly better voice reproduction. This dataset is designed to capture the full range of vocal characteristics needed for high-fidelity voice synthesis.
+**Qwen3-TTS zero-shot** voice cloning with just **3 seconds** of reference audio produces excellent results for most use cases. However, fine-tuning on a larger, diverse dataset yields near-perfect voice reproduction for production applications.
+
+| Approach | Reference Audio | Training Time | Quality |
+|----------|----------------|---------------|---------|
+| **Qwen3-TTS Zero-Shot** | 3-10 seconds | None | Excellent |
+| **Fine-tuned** | 50-100 clips | 2-8 hours | Near-perfect |
 
 ## Dataset Composition
 
@@ -200,7 +207,7 @@ These clips use pangrams—sentences containing every letter of the alphabet—w
 - Mono channel
 - Filename: `clip_XXX.wav` (matching metadata.csv)
 
-> **Note:** Record at high quality (44.1 kHz, 32-bit). The preprocessing pipeline will automatically resample to 22050 Hz for XTTS-v2 training. Higher-quality source recordings produce better results after noise reduction and normalization.
+> **Note:** Record at high quality (44.1 kHz, 32-bit). The preprocessing pipeline will automatically resample to **24000 Hz** for Qwen3-TTS/XTTS-v2 training. Higher-quality source recordings produce better results after noise reduction and normalization.
 
 ## Recording with Audacity on macOS
 
@@ -293,7 +300,7 @@ When exporting WAV files, use these settings:
 | **Sample Rate** | 44100 Hz |
 | **Channels** | Mono |
 
-> **Why high quality?** The preprocessing pipeline (`preprocess_training_data.py`) will resample to 22050 Hz and normalize for XTTS-v2. Recording at higher quality preserves more detail for noise reduction and ensures the best possible source material.
+> **Why high quality?** The preprocessing pipeline (`preprocess_training_data.py`) will resample to 24000 Hz and normalize for Qwen3-TTS/XTTS-v2. Recording at higher quality preserves more detail for noise reduction and ensures the best possible source material.
 
 ### Audacity Keyboard Shortcuts
 
@@ -388,21 +395,50 @@ training_data/
 
 ## Processing Pipeline
 
+### Quick Start (Qwen3-TTS Zero-Shot)
+
+For most use cases, you don't need to fine-tune! Just record a 3-10 second reference:
+
+```bash
+# 1. Record a short reference clip (3-10 seconds)
+# 2. Save as voice_reference.wav
+# 3. Use directly with the TTS server - no training needed!
+```
+
+### Full Fine-tuning Pipeline
+
+If you need production-quality voice cloning:
+
 1. **Record** all 100 clips into `wavs/` directory
-2. **Preprocess** using Docker container:
+
+2. **Create wavs/ and processed/ directories**:
    ```bash
-   docker compose run --rm voice-tts python preprocess_training_data.py \
-       --input-dir /app/training_data/wavs \
-       --output-dir /app/training_data/processed \
-       --metadata /app/training_data/metadata.csv
+   mkdir -p data/training/wavs data/training/processed
    ```
-3. **Split** into train/eval sets:
+
+3. **Preprocess** using Docker container:
    ```bash
-   python split_dataset.py --metadata training_data/metadata.csv --train-ratio 0.9
+   cd server
+   docker compose run --rm voice-tts python scripts/preprocess_training_data.py \
+       --input-dir /app/data/training/wavs \
+       --output-dir /app/data/training/processed \
+       --metadata /app/data/training/metadata.csv \
+       --sr 24000
    ```
-4. **Fine-tune** the model:
+
+4. **Split** into train/eval sets (already done in `metadata_train.csv` and `metadata_eval.csv`):
    ```bash
-   docker compose run --rm voice-tts python finetune_xtts.py --config finetune_config.json
+   python scripts/split_dataset.py --metadata ../data/training/metadata.csv --train-ratio 0.9
+   ```
+
+5. **Fine-tune** the Qwen3-TTS model:
+   ```bash
+   docker compose run --rm voice-tts python scripts/finetune_qwen3.py --config config/finetune_config.json
+   ```
+
+   Or validate dataset only:
+   ```bash
+   docker compose run --rm voice-tts python scripts/finetune_qwen3.py --config config/finetune_config.json --validate-only
    ```
 
 ## Expected Results
@@ -417,4 +453,6 @@ training_data/
 
 - [Implementation Plan](../../implementation_plans/voice-cloning-tts-mcp-server-implementation.md)
 - [Design Document](../../design_docs/voice-cloning-tts-mcp-server.md)
-- [Coqui TTS Documentation](https://github.com/coqui-ai/TTS)
+- [Qwen3-TTS GitHub](https://github.com/QwenLM/Qwen3-TTS) — SOTA model (Jan 2026)
+- [Qwen3-TTS Fine-tuning Guide](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning)
+- [Coqui TTS Documentation](https://github.com/coqui-ai/TTS) — XTTS-v2 (fallback)
