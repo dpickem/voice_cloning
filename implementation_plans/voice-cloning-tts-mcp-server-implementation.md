@@ -1,9 +1,12 @@
 # Voice Cloning TTS with MCP Server — Implementation Plan
 
 **Created:** 2026-01-08  
+**Updated:** 2026-01-26  
 **Status:** 🟢 Ready for Implementation  
-**Tags:** #implementation-plan #tts #voice-cloning #mcp #cursor #docker  
+**Tags:** #implementation-plan #tts #voice-cloning #mcp #cursor #docker #qwen3-tts  
 **Based on:** [[voice-cloning-tts-mcp-server]] (Design Proposal)
+
+> **Note:** Updated January 2026 to use **Qwen3-TTS** (SOTA open-source model) instead of XTTS-v2.
 
 ---
 
@@ -151,10 +154,13 @@ mkdir -p {voice_references,audio_output,logs,models}
 cd ~/voice-tts-server
 
 cat > requirements.txt << 'EOF'
-# Core TTS
-TTS>=0.22.0
-torch>=2.0.0
-torchaudio>=2.0.0
+# Core TTS - Qwen3-TTS (SOTA voice cloning)
+qwen-tts>=1.0.0
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# FlashAttention 2 for memory efficiency (installed separately)
+# pip install flash-attn --no-build-isolation
 
 # API Server
 fastapi>=0.104.0
@@ -179,10 +185,10 @@ EOF
 cd ~/voice-tts-server
 
 cat > Dockerfile << 'EOF'
-# Voice Cloning TTS Server
+# Voice Cloning TTS Server using Qwen3-TTS (SOTA)
 # Base image with CUDA support for GPU acceleration
 
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 # Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
@@ -190,18 +196,26 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Python 3.12
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-venv \
+    software-properties-common \
+    curl \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
     libsndfile1 \
     ffmpeg \
     git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symlinks for python
-RUN ln -sf /usr/bin/python3 /usr/bin/python
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.12 /usr/bin/python
+
+# Install pip for Python 3.12
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
 
 # Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip
@@ -216,7 +230,10 @@ RUN pip install --no-cache-dir \
     torchaudio==2.1.0 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install remaining dependencies
+# Install FlashAttention 2 (requires CUDA dev tools, hence devel base image)
+RUN MAX_JOBS=4 pip install --no-cache-dir flash-attn --no-build-isolation
+
+# Install remaining dependencies including qwen-tts
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
@@ -228,18 +245,18 @@ RUN mkdir -p /app/voice_references /app/audio_output /app/logs /app/models
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV TTS_HOME=/app/models
-ENV COQUI_TOS_AGREED=1
+ENV HF_HOME=/app/models
+ENV TRANSFORMERS_CACHE=/app/models
 
-# Pre-download the XTTS-v2 model during build (optional, makes first start faster)
+# Pre-download the Qwen3-TTS model during build (optional, makes first start faster)
 # Uncomment the following lines if you want to bake the model into the image
-# RUN python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"
+# RUN python -c "from qwen_tts import Qwen3TTSModel; Qwen3TTSModel.from_pretrained('Qwen/Qwen3-TTS-12Hz-1.7B-Base')"
 
 # Expose API port
 EXPOSE 8080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the server
@@ -290,9 +307,10 @@ services:
     # Environment variables
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - TTS_HOME=/app/models
-      - COQUI_TOS_AGREED=1
+      - HF_HOME=/app/models
+      - TRANSFORMERS_CACHE=/app/models
       - PYTHONUNBUFFERED=1
+      - TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-Base
     
     # Logging configuration
     logging:
@@ -319,14 +337,20 @@ cd ~/voice-tts-server
 cat > tts_server.py << 'EOF'
 #!/usr/bin/env python3
 """
-Voice Cloning TTS API Server (Docker Edition)
+Voice Cloning TTS API Server (Docker Edition) — Qwen3-TTS
 
-FastAPI server that provides text-to-speech synthesis using XTTS-v2
-with a cloned voice reference. Designed to run in a Docker container
+FastAPI server that provides text-to-speech synthesis using Qwen3-TTS (SOTA)
+with voice cloning capabilities. Designed to run in a Docker container
 with NVIDIA GPU support.
 
+Features:
+    - 3-second rapid voice cloning (SOTA)
+    - 10 language support
+    - Ultra-low latency streaming (97ms first packet)
+    - Instruction-controlled speech generation
+
 Endpoints:
-    POST /synthesize - Convert text to speech
+    POST /synthesize - Convert text to speech with voice cloning
     GET /health - Health check
     GET /voices - List available voice references
 """
@@ -344,30 +368,45 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 import torch
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from TTS.api import TTS
 
 # Configuration (can be overridden via environment variables)
 VOICE_REFERENCES_DIR = Path(os.getenv("VOICE_REFERENCES_DIR", "/app/voice_references"))
 AUDIO_OUTPUT_DIR = Path(os.getenv("AUDIO_OUTPUT_DIR", "/app/audio_output"))
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "voice_reference.wav")
-MODEL_NAME = os.getenv("TTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+DEFAULT_VOICE_TEXT = os.getenv("DEFAULT_VOICE_TEXT", "")  # Transcript of reference audio
+MODEL_NAME = os.getenv("TTS_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8080"))
 
-# Global TTS instance
-tts_model: Optional[TTS] = None
+# Global model instance
+tts_model = None
+voice_clone_prompt = None  # Cached voice prompt for faster inference
+
+# Language mapping for Qwen3-TTS
+LANGUAGE_MAP = {
+    "en": "English",
+    "zh": "Chinese", 
+    "ja": "Japanese",
+    "ko": "Korean",
+    "de": "German",
+    "fr": "French",
+    "ru": "Russian",
+    "pt": "Portuguese",
+    "es": "Spanish",
+    "it": "Italian",
+}
 
 
 class TTSRequest(BaseModel):
     """Request model for text-to-speech synthesis."""
     text: str = Field(..., min_length=1, max_length=5000, description="Text to synthesize")
-    language: str = Field(default="en", description="Language code (en, es, fr, de, etc.)")
+    language: str = Field(default="en", description="Language code (en, zh, ja, ko, de, fr, ru, pt, es, it)")
     voice: str = Field(default=DEFAULT_VOICE, description="Voice reference filename")
-    output_format: str = Field(default="wav", description="Output format: wav or base64")
+    voice_text: str = Field(default="", description="Transcript of voice reference (improves quality)")
 
 
 class TTSResponse(BaseModel):
@@ -378,12 +417,14 @@ class TTSResponse(BaseModel):
     sample_rate: int
     processing_time_ms: float
     text_length: int
+    model: str = "Qwen3-TTS"
 
 
 class HealthResponse(BaseModel):
     """Health check response."""
     status: str
     model_loaded: bool
+    model_name: str
     gpu_available: bool
     gpu_name: Optional[str]
     cuda_version: Optional[str]
@@ -395,18 +436,19 @@ class VoiceInfo(BaseModel):
     """Voice reference information."""
     filename: str
     size_bytes: int
+    has_transcript: bool
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle - load model on startup."""
-    global tts_model
+    global tts_model, voice_clone_prompt
     
     print("=" * 60)
-    print("Voice Cloning TTS Server (Docker)")
+    print("Voice Cloning TTS Server (Qwen3-TTS)")
     print("=" * 60)
     
-    print("Loading TTS model...")
+    print(f"Loading model: {MODEL_NAME}")
     start_time = time.time()
     
     gpu_available = torch.cuda.is_available()
@@ -416,8 +458,15 @@ async def lifespan(app: FastAPI):
         print(f"CUDA version: {torch.version.cuda}")
         print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
     
-    # Load model (will download on first run if not cached)
-    tts_model = TTS(MODEL_NAME, gpu=gpu_available)
+    # Load Qwen3-TTS model
+    from qwen_tts import Qwen3TTSModel
+    
+    tts_model = Qwen3TTSModel.from_pretrained(
+        MODEL_NAME,
+        device_map="cuda:0" if gpu_available else "cpu",
+        dtype=torch.bfloat16 if gpu_available else torch.float32,
+        attn_implementation="flash_attention_2" if gpu_available else "eager",
+    )
     
     load_time = time.time() - start_time
     print(f"Model loaded in {load_time:.2f}s")
@@ -432,6 +481,16 @@ async def lifespan(app: FastAPI):
     for v in voices:
         print(f"  - {v.name}")
     
+    # Pre-cache default voice prompt if it exists
+    default_voice_path = VOICE_REFERENCES_DIR / DEFAULT_VOICE
+    if default_voice_path.exists() and DEFAULT_VOICE_TEXT:
+        print(f"Pre-caching voice prompt for: {DEFAULT_VOICE}")
+        voice_clone_prompt = tts_model.create_voice_clone_prompt(
+            ref_audio=str(default_voice_path),
+            ref_text=DEFAULT_VOICE_TEXT,
+        )
+        print("Voice prompt cached ✓")
+    
     print("=" * 60)
     print(f"Server ready at http://{HOST}:{PORT}")
     print("=" * 60)
@@ -443,9 +502,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Voice Cloning TTS API",
-    description="Text-to-speech synthesis with voice cloning using XTTS-v2 (Docker Edition)",
-    version="1.0.0",
+    title="Voice Cloning TTS API (Qwen3-TTS)",
+    description="SOTA text-to-speech synthesis with 3-second voice cloning using Qwen3-TTS",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -466,6 +525,7 @@ async def health_check():
     return HealthResponse(
         status="healthy" if tts_model is not None else "unhealthy",
         model_loaded=tts_model is not None,
+        model_name=MODEL_NAME,
         gpu_available=gpu_available,
         gpu_name=torch.cuda.get_device_name(0) if gpu_available else None,
         cuda_version=torch.version.cuda if gpu_available else None,
@@ -479,9 +539,12 @@ async def list_voices():
     """List available voice reference files."""
     voices = []
     for file in VOICE_REFERENCES_DIR.glob("*.wav"):
+        # Check if transcript file exists
+        transcript_file = file.with_suffix(".txt")
         voices.append(VoiceInfo(
             filename=file.name,
-            size_bytes=file.stat().st_size
+            size_bytes=file.stat().st_size,
+            has_transcript=transcript_file.exists()
         ))
     return voices
 
@@ -491,7 +554,8 @@ async def synthesize(request: TTSRequest):
     """
     Synthesize speech from text using cloned voice.
     
-    Returns audio as base64-encoded WAV or raw WAV bytes.
+    Qwen3-TTS achieves SOTA voice cloning with just 3 seconds of reference audio.
+    Providing a transcript of the reference audio improves cloning quality.
     """
     if tts_model is None:
         raise HTTPException(status_code=503, detail="TTS model not loaded")
@@ -505,34 +569,59 @@ async def synthesize(request: TTSRequest):
             detail=f"Voice reference '{request.voice}' not found. Available: {available}"
         )
     
+    # Get voice transcript if available
+    voice_text = request.voice_text
+    if not voice_text:
+        transcript_file = voice_path.with_suffix(".txt")
+        if transcript_file.exists():
+            voice_text = transcript_file.read_text().strip()
+    
+    # Map language code to Qwen3-TTS language name
+    language = LANGUAGE_MAP.get(request.language.lower(), "English")
+    
     start_time = time.time()
     
     try:
-        # Run synthesis in thread pool to avoid blocking
+        # Use cached prompt if available and voice matches default
+        global voice_clone_prompt
+        
         loop = asyncio.get_event_loop()
-        wav = await loop.run_in_executor(
-            None,
-            lambda: tts_model.tts(
-                text=request.text,
-                speaker_wav=str(voice_path),
-                language=request.language
+        
+        if voice_clone_prompt and request.voice == DEFAULT_VOICE:
+            # Use cached voice prompt for faster inference
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: tts_model.generate_voice_clone(
+                    text=request.text,
+                    language=language,
+                    voice_clone_prompt=voice_clone_prompt,
+                )
             )
-        )
+        else:
+            # Generate with voice reference
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: tts_model.generate_voice_clone(
+                    text=request.text,
+                    language=language,
+                    ref_audio=str(voice_path),
+                    ref_text=voice_text if voice_text else None,
+                )
+            )
+        
+        wav = wavs[0]
         
         # Convert to numpy array if needed
         if not isinstance(wav, np.ndarray):
             wav = np.array(wav)
         
-        # Get sample rate from model config
-        sample_rate = tts_model.synthesizer.output_sample_rate
-        
         # Write to buffer
         buffer = io.BytesIO()
-        sf.write(buffer, wav, sample_rate, format='WAV', subtype='PCM_16')
+        sf.write(buffer, wav, sr, format='WAV', subtype='PCM_16')
         audio_bytes = buffer.getvalue()
         
         processing_time = (time.time() - start_time) * 1000
-        duration = len(wav) / sample_rate
+        duration = len(wav) / sr
         
         # Encode as base64
         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -541,9 +630,10 @@ async def synthesize(request: TTSRequest):
             success=True,
             audio_base64=audio_base64,
             duration_seconds=duration,
-            sample_rate=sample_rate,
+            sample_rate=sr,
             processing_time_ms=processing_time,
-            text_length=len(request.text)
+            text_length=len(request.text),
+            model="Qwen3-TTS"
         )
         
     except Exception as e:
@@ -564,31 +654,53 @@ async def synthesize_raw(request: TTSRequest):
     if not voice_path.exists():
         raise HTTPException(status_code=404, detail=f"Voice reference '{request.voice}' not found")
     
+    # Get voice transcript if available
+    voice_text = request.voice_text
+    if not voice_text:
+        transcript_file = voice_path.with_suffix(".txt")
+        if transcript_file.exists():
+            voice_text = transcript_file.read_text().strip()
+    
+    language = LANGUAGE_MAP.get(request.language.lower(), "English")
+    
     try:
+        global voice_clone_prompt
         loop = asyncio.get_event_loop()
-        wav = await loop.run_in_executor(
-            None,
-            lambda: tts_model.tts(
-                text=request.text,
-                speaker_wav=str(voice_path),
-                language=request.language
-            )
-        )
         
+        if voice_clone_prompt and request.voice == DEFAULT_VOICE:
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: tts_model.generate_voice_clone(
+                    text=request.text,
+                    language=language,
+                    voice_clone_prompt=voice_clone_prompt,
+                )
+            )
+        else:
+            wavs, sr = await loop.run_in_executor(
+                None,
+                lambda: tts_model.generate_voice_clone(
+                    text=request.text,
+                    language=language,
+                    ref_audio=str(voice_path),
+                    ref_text=voice_text if voice_text else None,
+                )
+            )
+        
+        wav = wavs[0]
         if not isinstance(wav, np.ndarray):
             wav = np.array(wav)
         
-        sample_rate = tts_model.synthesizer.output_sample_rate
-        
         buffer = io.BytesIO()
-        sf.write(buffer, wav, sample_rate, format='WAV', subtype='PCM_16')
+        sf.write(buffer, wav, sr, format='WAV', subtype='PCM_16')
         
         return Response(
             content=buffer.getvalue(),
             media_type="audio/wav",
             headers={
-                "X-Duration-Seconds": str(len(wav) / sample_rate),
-                "X-Sample-Rate": str(sample_rate)
+                "X-Duration-Seconds": str(len(wav) / sr),
+                "X-Sample-Rate": str(sr),
+                "X-Model": "Qwen3-TTS"
             }
         )
         
@@ -633,7 +745,7 @@ import numpy as np
 def preprocess_audio(
     input_file: str,
     output_file: str,
-    target_sr: int = 22050,
+    target_sr: int = 24000,
     normalize: bool = True,
     denoise: bool = True
 ) -> str:
@@ -643,7 +755,7 @@ def preprocess_audio(
     Args:
         input_file: Path to input audio file
         output_file: Path to save processed audio
-        target_sr: Target sample rate (22050 for XTTS-v2)
+        target_sr: Target sample rate (24000 for Qwen3-TTS)
         normalize: Whether to normalize volume
         denoise: Whether to apply noise reduction
     
@@ -689,7 +801,7 @@ def main():
     parser = argparse.ArgumentParser(description="Preprocess audio for voice cloning")
     parser.add_argument("input", help="Input audio file")
     parser.add_argument("-o", "--output", help="Output file (default: input_processed.wav)")
-    parser.add_argument("--sr", type=int, default=22050, help="Target sample rate")
+    parser.add_argument("--sr", type=int, default=24000, help="Target sample rate (24000 for Qwen3-TTS)")
     parser.add_argument("--no-normalize", action="store_true", help="Skip normalization")
     parser.add_argument("--no-denoise", action="store_true", help="Skip noise reduction")
     
@@ -734,13 +846,16 @@ docker compose build
 
 ### 3.1 Recording Requirements
 
+> **Qwen3-TTS Advantage:** Only **3 seconds** of reference audio needed for SOTA voice cloning!
+
 | Requirement | Specification |
 |-------------|---------------|
 | **Format** | WAV (16-bit PCM) |
-| **Duration** | 15-30 seconds (optimal) |
-| **Sample Rate** | 22050 Hz or 24000 Hz |
+| **Duration** | **3-10 seconds** (Qwen3-TTS needs only 3s minimum!) |
+| **Sample Rate** | 24000 Hz or higher |
 | **Channels** | Mono |
 | **Quality** | Clean, no background noise |
+| **Transcript** | Recommended — improves cloning quality |
 
 ### 3.2 Recording Script
 
@@ -783,7 +898,23 @@ docker compose run --rm voice-tts python preprocess_audio.py \
 ls -la voice_references/
 ```
 
-### 3.5 Validate Voice Reference (Using Docker)
+### 3.5 Create Voice Transcript (Recommended)
+
+For best cloning quality with Qwen3-TTS, create a transcript file for your voice reference:
+
+```bash
+ssh desktop
+cd ~/voice-tts-server/voice_references
+
+# Create transcript file with the exact text spoken in your reference audio
+cat > voice_reference.txt << 'EOF'
+Hello, my name is [Your Name]. I'm recording this sample to create a voice clone. The quick brown fox jumps over the lazy dog.
+EOF
+
+# The server will automatically load this transcript when using voice_reference.wav
+```
+
+### 3.6 Validate Voice Reference (Using Docker)
 
 ```bash
 ssh desktop
@@ -791,21 +922,38 @@ cd ~/voice-tts-server
 
 # Start the container temporarily to test voice cloning
 docker compose run --rm voice-tts python << 'EOF'
-from TTS.api import TTS
 import torch
+import soundfile as sf
+from qwen_tts import Qwen3TTSModel
 
 # Load model
-print("Loading model...")
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=torch.cuda.is_available())
+print("Loading Qwen3-TTS model...")
+model = Qwen3TTSModel.from_pretrained(
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    device_map="cuda:0" if torch.cuda.is_available() else "cpu",
+    dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+    attn_implementation="flash_attention_2" if torch.cuda.is_available() else "eager",
+)
+
+# Load transcript if available
+ref_text = ""
+try:
+    with open("/app/voice_references/voice_reference.txt", "r") as f:
+        ref_text = f.read().strip()
+    print(f"Using transcript: {ref_text[:50]}...")
+except FileNotFoundError:
+    print("No transcript found (optional but recommended)")
 
 # Test synthesis with your voice
 print("Testing voice cloning...")
-tts.tts_to_file(
+wavs, sr = model.generate_voice_clone(
     text="Hello! This is a test of my cloned voice. The quality should sound natural and clear.",
-    speaker_wav="/app/voice_references/voice_reference.wav",
-    language="en",
-    file_path="/app/audio_output/test_output.wav"
+    language="English",
+    ref_audio="/app/voice_references/voice_reference.wav",
+    ref_text=ref_text if ref_text else None,
 )
+
+sf.write("/app/audio_output/test_output.wav", wavs[0], sr)
 print("Test audio saved to: /app/audio_output/test_output.wav")
 EOF
 
@@ -819,20 +967,22 @@ afplay ~/Desktop/test_output.wav
 
 ## 4. Phase 2A: Voice Model Fine-Tuning (Optional)
 
-> **Note:** This phase is optional. Zero-shot cloning (Phase 2) works well for most use cases. Fine-tuning provides higher quality voice reproduction but requires more audio data and training time.
+> **Note:** This phase is optional. Qwen3-TTS zero-shot cloning with just **3 seconds** of audio produces excellent results for most use cases. Fine-tuning is only needed for production-critical applications requiring near-perfect voice reproduction.
 
 ### 4.1 When to Fine-Tune vs. Zero-Shot
 
 | Approach | Audio Needed | Training Time | Quality | Use Case |
 |----------|--------------|---------------|---------|----------|
-| **Zero-Shot** | 15-30 seconds | None | Good | Quick setup, testing, general use |
-| **Fine-Tuning** | 5-30 minutes | 2-8 hours | Excellent | Production use, high fidelity required |
+| **Zero-Shot (Qwen3-TTS)** | **3-10 seconds** | None | **Excellent** | Most use cases |
+| **Fine-Tuning** | 5-30 minutes | 2-8 hours | Near-perfect | Production-critical, high fidelity |
 
 **Choose fine-tuning when:**
-- Zero-shot results don't capture your voice accurately
-- You need consistent, high-quality output for production
-- You have time to record and prepare training data
-- Voice characteristics (accent, cadence) are important
+- Zero-shot results don't fully capture subtle voice characteristics
+- You need perfect consistency across thousands of generations
+- Voice nuances (specific accent patterns, unique cadence) are critical
+- You're building a commercial product with high quality bar
+
+> **Qwen3-TTS Fine-Tuning:** See the [official fine-tuning guide](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) for detailed instructions.
 
 ### 4.2 Hardware Requirements for Fine-Tuning
 
@@ -1064,7 +1214,7 @@ def main():
     parser.add_argument("--input-dir", default="training_data/wavs", help="Input directory")
     parser.add_argument("--output-dir", default="training_data/processed", help="Output directory")
     parser.add_argument("--metadata", default="training_data/metadata.csv", help="Metadata file")
-    parser.add_argument("--sr", type=int, default=22050, help="Target sample rate")
+    parser.add_argument("--sr", type=int, default=24000, help="Target sample rate (24000 for Qwen3-TTS)")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel workers")
     
     args = parser.parse_args()
@@ -1201,33 +1351,37 @@ python3 split_dataset.py --metadata training_data/metadata.csv --train-ratio 0.9
 
 ### 4.9 Fine-Tuning Configuration
 
+> **Important:** For Qwen3-TTS fine-tuning, refer to the [official fine-tuning guide](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) which provides comprehensive instructions and optimized configurations.
+
 ```bash
 ssh desktop
 cd ~/voice-tts-server
 
-# Create fine-tuning configuration
+# Create fine-tuning configuration for Qwen3-TTS
 cat > finetune_config.json << 'EOF'
 {
-    "model": "tts_models/multilingual/multi-dataset/xtts_v2",
+    "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     "output_path": "finetuned_model/",
     "training": {
-        "batch_size": 2,
-        "eval_batch_size": 2,
+        "batch_size": 1,
+        "eval_batch_size": 1,
         "num_epochs": 50,
-        "learning_rate": 5e-6,
+        "learning_rate": 1e-5,
         "learning_rate_scheduler": "cosine",
-        "warmup_steps": 500,
-        "gradient_accumulation_steps": 4,
-        "max_audio_length": 11,
+        "warmup_steps": 100,
+        "gradient_accumulation_steps": 8,
+        "max_audio_length": 15,
         "save_checkpoint_every_n_epochs": 10,
-        "keep_last_n_checkpoints": 3
+        "keep_last_n_checkpoints": 3,
+        "use_flash_attention": true,
+        "dtype": "bfloat16"
     },
     "data": {
         "train_csv": "training_data/metadata_train.csv",
         "eval_csv": "training_data/metadata_eval.csv",
         "audio_dir": "training_data/processed/",
-        "language": "en",
-        "sample_rate": 22050
+        "language": "English",
+        "sample_rate": 24000
     },
     "logging": {
         "log_every_n_steps": 50,
@@ -1911,11 +2065,16 @@ cd ~/mcp-servers/voice-tts
 cat > mcp_voice_tts.py << 'EOF'
 #!/usr/bin/env python3
 """
-MCP Server for Voice Cloning TTS
+MCP Server for Voice Cloning TTS (Qwen3-TTS)
 
 Provides Cursor with text-to-speech capabilities using a remote
-voice cloning server (Docker container). Plays synthesized audio 
-through local speakers.
+voice cloning server (Docker container) running Qwen3-TTS (SOTA).
+Plays synthesized audio through local speakers.
+
+Features:
+    - SOTA voice cloning with 3-second reference audio
+    - 10 language support
+    - Ultra-low latency (97ms first packet)
 
 Tools:
     - speak: Convert text to speech and play through speakers
@@ -2000,7 +2159,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="speak",
-            description="Convert text to speech using your cloned voice and play through speakers. Use this to read text aloud or provide audio feedback.",
+            description="Convert text to speech using your cloned voice (Qwen3-TTS SOTA) and play through speakers. Only needs 3 seconds of reference audio!",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -2010,7 +2169,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "language": {
                         "type": "string",
-                        "description": "Language code (default: en). Supported: en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh, ja, hu, ko, hi",
+                        "description": "Language code (default: en). Supported: en, zh, ja, ko, de, fr, ru, pt, es, it",
                         "default": "en"
                     },
                     "voice": {
@@ -2128,6 +2287,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 if response.status_code == 200:
                     health = response.json()
                     status = "✓" if health["status"] == "healthy" else "✗"
+                    model_name = health.get("model_name", "Unknown")
                     gpu = health.get("gpu_name", "None")
                     cuda = health.get("cuda_version", "N/A")
                     container = "Docker" if health.get("container") else "Native"
@@ -2135,6 +2295,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         type="text",
                         text=f"TTS Server Status:\n"
                              f"  Status: {status} {health['status']}\n"
+                             f"  Model: {model_name}\n"
                              f"  Model loaded: {health['model_loaded']}\n"
                              f"  GPU: {gpu}\n"
                              f"  CUDA: {cuda}\n"
@@ -2622,3 +2783,4 @@ truncate -s 0 /var/lib/docker/containers/*/\*-json.log
 
 - [[voice-cloning-tts-mcp-server]] — Original design proposal
 - [[2026-01-08]] — Implementation plan created
+- [[2026-01-26]] — Updated to use Qwen3-TTS (SOTA open-source model)

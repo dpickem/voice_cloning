@@ -1,7 +1,7 @@
 # Voice Cloning TTS with MCP Server Integration
 
 **Created:** 2026-01-07  
-**Updated:** 2026-01-09  
+**Updated:** 2026-01-26  
 **Status:** 🟢 Ready for Implementation  
 **Tags:** #design-proposal #tts #voice-cloning #mcp #cursor  
 **Implementation:** [[voice-cloning-tts-mcp-server-implementation]]
@@ -37,7 +37,7 @@ Build a personal voice cloning system using open-source TTS models that runs loc
 │  ┌──────────────────────────────────────────────────────────────┐   │
 │  │                    TTS API Server (FastAPI)                   │   │
 │  │  ┌────────────────┐    ┌────────────────────────────────┐    │   │
-│  │  │  Voice Clone   │    │     TTS Model (e.g., XTTS-v2)  │    │   │
+│  │  │  Voice Clone   │    │  TTS Model (Qwen3-TTS/XTTS-v2) │    │   │
 │  │  │  Reference     │───▶│     - Text → Speech            │    │   │
 │  │  │  Audio Files   │    │     - Voice Embedding          │    │   │
 │  │  └────────────────┘    └────────────────────────────────┘    │   │
@@ -49,37 +49,123 @@ Build a personal voice cloning system using open-source TTS models that runs loc
 
 ## Open Source TTS Models (as of January 2026)
 
-### ⚠️ Qwen3-TTS-VC-VoiceDesign (API-Only)
+### ⭐⭐ NEW: Qwen3-TTS (Open Source — SOTA Voice Cloning)
 
 | Attribute | Details |
 |-----------|---------|
-| **Model** | Qwen3-TTS-VC-VoiceDesign |
-| **Voice Cloning** | ✅ High-fidelity voice cloning |
-| **Features** | TTS + Voice Conversion (VC) + Voice Design |
-| **Local Hosting** | ❌ **No** — API-only via Alibaba Cloud DashScope |
-| **Blog** | [qwen.ai/blog](https://qwen.ai/blog?id=qwen3-tts-vc-voicedesign) |
+| **Model** | Qwen3-TTS Series (0.6B / 1.7B) |
+| **Voice Cloning** | ✅ SOTA 3-second rapid voice cloning |
+| **Languages** | 10 languages (Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian) |
+| **Features** | TTS + Voice Cloning + Voice Design + Instruction Control |
+| **Streaming** | ✅ Ultra-low latency (97ms first packet) |
+| **Local Hosting** | ✅ **Yes** — Fully open source under Apache 2.0 |
+| **Training Data** | 5+ million hours of speech data |
+| **GitHub** | [QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) (4.8k+ stars) |
+| **HuggingFace** | [Qwen/Qwen3-TTS Collection](https://huggingface.co/collections/Qwen/qwen3-tts) |
+| **Paper** | [arXiv:2601.15621](https://arxiv.org/abs/2601.15621) |
+| **Blog** | [qwen.ai/blog](https://qwen.ai/blog?id=qwen3tts-0115) |
 
-**⚠️ Important:** This model is **NOT available for local self-hosting**. It requires calling Alibaba Cloud's DashScope API, which means:
-- Requires internet connection
-- Requires Alibaba Cloud account and API key
-- Audio data is sent to cloud servers
-- May have usage costs
+**🎉 Released January 22, 2026:** Qwen3-TTS is now **fully open source** and represents the current state-of-the-art in voice cloning TTS. Unlike the earlier Qwen3-TTS-VC-VoiceDesign (API-only), this release includes full model weights for self-hosting.
+
+#### Available Models
+
+| Model | Size | Features | Streaming | Instruction Control |
+|-------|------|----------|-----------|---------------------|
+| **Qwen3-TTS-12Hz-1.7B-Base** | 1.7B | 3-second voice clone, fine-tuning base | ✅ | — |
+| **Qwen3-TTS-12Hz-1.7B-CustomVoice** | 1.7B | 9 premium voices, style control | ✅ | ✅ |
+| **Qwen3-TTS-12Hz-1.7B-VoiceDesign** | 1.7B | Create voices from descriptions | ✅ | ✅ |
+| **Qwen3-TTS-12Hz-0.6B-Base** | 0.6B | Lightweight voice clone | ✅ | — |
+| **Qwen3-TTS-12Hz-0.6B-CustomVoice** | 0.6B | Lightweight with premium voices | ✅ | — |
+| **Qwen3-TTS-Tokenizer-12Hz** | — | Speech tokenizer for encoding/decoding | — | — |
+
+#### Key Technical Innovations
+
+1. **Dual-Track LM Architecture** — Enables real-time streaming synthesis with a single model supporting both streaming and non-streaming generation
+2. **Qwen3-TTS-Tokenizer-12Hz** — 12.5 Hz, 16-layer multi-codebook design achieving extreme bitrate reduction
+3. **Lightweight Causal ConvNet** — Enables 97ms first-packet emission for ultra-low latency
+4. **Intelligent Text Understanding** — Adaptive control of tone, speaking rate, and emotional expression based on instructions and text semantics
+
+#### Benchmark Performance (SOTA)
+
+| Benchmark | Qwen3-TTS-12Hz-1.7B | Best Competitor | Metric |
+|-----------|---------------------|-----------------|--------|
+| Seed-TTS (Chinese) | **0.77%** | CosyVoice 3: 0.71% | WER ↓ |
+| Seed-TTS (English) | **1.24%** | CosyVoice 3: 1.45% | WER ↓ |
+| Speaker Similarity (Avg) | **0.79+** | MiniMax: 0.75 | SIM ↑ |
+| Long Speech (EN) | **1.22%** | Higgs-Audio-v2: 6.92% | WER ↓ |
 
 **Pros:**
-- High-quality voice cloning with subtle nuance capture
-- Combined TTS + Voice Conversion capabilities
-- Voice Design feature for creating new voices
-- No local GPU required
+- ✅ **SOTA voice cloning** — Best-in-class on multiple benchmarks
+- ✅ **Ultra-fast cloning** — Only 3 seconds of reference audio needed (vs 6s for XTTS-v2)
+- ✅ **Ultra-low latency** — 97ms first packet for real-time applications
+- ✅ **Voice Design** — Create entirely new voices from text descriptions
+- ✅ **Instruction Control** — Natural language control over emotion, style, prosody
+- ✅ **Fully self-hostable** — Open source under Apache 2.0
+- ✅ **vLLM support** — Day-0 support for optimized inference
+- ✅ **Fine-tuning support** — Full fine-tuning documentation included
+- ✅ **10 languages** with strong multilingual performance
 
 **Cons:**
-- ❌ Cannot be self-hosted locally
-- Requires internet and cloud API
-- Privacy concerns (audio sent to cloud)
-- Potential API costs
+- Newer model (released Jan 2026) — less community testing than XTTS-v2
+- Larger model sizes (0.6B-1.7B) may require more VRAM than XTTS-v2
+- Requires Python 3.12 and FlashAttention 2 for optimal performance
+
+#### Quick Start
+
+```bash
+# Install
+conda create -n qwen3-tts python=3.12 -y
+conda activate qwen3-tts
+pip install -U qwen-tts
+pip install -U flash-attn --no-build-isolation
+```
+
+```python
+import torch
+import soundfile as sf
+from qwen_tts import Qwen3TTSModel
+
+# Load model
+model = Qwen3TTSModel.from_pretrained(
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    device_map="cuda:0",
+    dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
+)
+
+# Voice cloning with just 3 seconds of reference audio
+wavs, sr = model.generate_voice_clone(
+    text="Hello, this is my cloned voice speaking.",
+    language="English",
+    ref_audio="my_voice_reference.wav",
+    ref_text="The transcript of the reference audio.",
+)
+sf.write("output.wav", wavs[0], sr)
+```
+
+#### Voice Design (Create New Voices from Descriptions)
+
+```python
+from qwen_tts import Qwen3TTSModel
+
+model = Qwen3TTSModel.from_pretrained(
+    "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    device_map="cuda:0",
+    dtype=torch.bfloat16,
+)
+
+# Create a voice from a natural language description
+wavs, sr = model.generate_voice_design(
+    text="Welcome to our product demo!",
+    language="English",
+    instruct="Professional male voice, warm and confident, mid-30s, clear American accent",
+)
+sf.write("designed_voice.wav", wavs[0], sr)
+```
 
 ---
 
-### ⭐ Recommended for Local Hosting: XTTS-v2 (Coqui TTS)
+### ⭐ Alternative: XTTS-v2 (Coqui TTS) — Mature & Well-Tested
 
 | Attribute | Details |
 |-----------|---------|
@@ -170,6 +256,218 @@ Build a personal voice cloning system using open-source TTS models that runs loc
 
 ---
 
+## Speech-to-Text (ASR) Models
+
+For complete voice agent pipelines, you may also need Speech-to-Text (ASR/STT) capabilities. These models transcribe spoken audio to text, which can then be processed by an LLM before generating a TTS response.
+
+### ⭐ NVIDIA Nemotron Speech ASR (0.6B) — Low-Latency Streaming
+
+| Attribute | Details |
+|-----------|---------|
+| **Model** | Nemotron Speech ASR |
+| **Parameters** | 600M (0.6B) |
+| **Architecture** | Cache-aware FastConformer encoder + RNNT decoder |
+| **Audio Input** | 16 kHz mono, minimum 80ms chunks |
+| **Streaming** | ✅ True streaming with cache-aware design (no overlapping windows) |
+| **WER** | ~7.2–7.8% across standard benchmarks |
+| **Local Hosting** | ✅ **Yes** — Open weights, self-hostable |
+| **License** | NVIDIA Permissive Open Model License |
+| **HuggingFace** | [`nvidia/nemotron-speech-streaming-en-0.6b`](https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b) |
+
+**Key Innovation — Cache-Aware Streaming:**
+Traditional streaming ASR uses overlapping windows that reprocess audio, wasting compute and causing latency drift. Nemotron Speech ASR keeps a cache of encoder states, processing each chunk only once:
+- Non-overlapping frame processing (linear scaling with audio length)
+- Predictable memory growth
+- Stable latency under load (critical for voice agents)
+
+**Configurable Chunk Sizes (Latency vs. Accuracy):**
+
+| Chunk Size | Latency | WER | Best For |
+|------------|---------|-----|----------|
+| ~80ms | Ultra-low | ~7.8% | Aggressive interruption handling |
+| ~160ms | Low | ~7.84% | Real-time voice agents |
+| ~560ms | Medium | ~7.22% | Balanced transcription |
+| ~1.12s | Higher | ~7.16% | Accuracy-focused workflows |
+
+> **Note:** Chunk size is configurable at inference time via `att_context_size` — no retraining required.
+
+**Concurrency & Throughput:**
+
+| GPU | Concurrent Streams | Notes |
+|-----|-------------------|-------|
+| **H100** | ~560 streams | At 320ms chunk, ~3x baseline |
+| **RTX A5000** | 5x+ baseline | Excellent for workstations |
+| **DGX B200** | ~2x baseline | Data center scale |
+
+**Voice Agent Latency (Full Pipeline):**
+With Nemotron Speech ASR + Nemotron 3 Nano 30B + Magpie TTS on RTX 5090:
+- Median time to final transcription: ~24ms
+- Server-side voice-to-voice latency: ~500ms
+
+**Pros:**
+- ✅ **True streaming** — cache-aware design, no overlapping windows
+- ✅ **Low latency** — sub-200ms end-to-end possible
+- ✅ **High concurrency** — 3-5x more streams than baseline
+- ✅ **Configurable** — trade latency vs. accuracy at runtime
+- ✅ **Self-hostable** — open weights under permissive license
+- ✅ **Well-documented** — trained on ~285k hours of audio
+
+**Cons:**
+- English-only (currently)
+- Requires NVIDIA GPU for optimal performance
+- Large training data requirement for fine-tuning
+
+**Reference:** [NVIDIA Nemotron Speech ASR Release](https://marktechpost.com/2026/01/06/nvidia-ai-released-nemotron-speech-asr/)
+
+---
+
+## Fine-Tuning Models (Unsloth)
+
+Unsloth provides optimized fine-tuning for TTS models with **1.5x faster training** and **50% less memory** using Flash Attention 2. Below are the models supported for fine-tuning via [Unsloth's TTS Fine-tuning](https://unsloth.ai/docs/basics/text-to-speech-tts-fine-tuning).
+
+> **Why Fine-Tune?** Zero-shot voice cloning captures the general tone and timbre of a speaker's voice, but loses details like speaking speed, phrasing, vocal quirks, and the subtleties of prosody. Fine-tuning delivers far more accurate and realistic voice replication.
+
+### ⭐ Orpheus-TTS (3B) — Recommended for Fine-Tuning
+
+| Attribute | Details |
+|-----------|---------|
+| **Model** | Orpheus-TTS 3B |
+| **Parameters** | 3B (Llama-based) |
+| **Pre-training** | Fine-tuned on 8 professional voice actors |
+| **Voice Consistency** | ✅ Built-in (no audio context required) |
+| **Special Features** | Emotional cues (`<laugh>`, `<sigh>`, `<cough>`, etc.) |
+| **Export** | llama.cpp compatible (GGUF) |
+| **HuggingFace** | `unsloth/orpheus-3b-0.1-ft` |
+
+**Pros:**
+- ✅ Built-in voice consistency from pre-training
+- ✅ Supports emotional expression tags in text
+- ✅ Can export to GGUF via llama.cpp
+- ✅ Better results out of the box (less compute needed)
+- ✅ Realistic speech with natural prosody
+
+**Cons:**
+- Larger model (3B) = higher latency
+- Requires more VRAM than smaller models
+
+**Example Usage:**
+```python
+from unsloth import FastLanguageModel
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="unsloth/orpheus-3b-0.1-ft",
+    max_seq_length=2048,
+    load_in_4bit=False,  # Use 4bit for less VRAM
+)
+```
+
+---
+
+### Sesame-CSM (1B) — Base Model
+
+| Attribute | Details |
+|-----------|---------|
+| **Model** | Sesame-CSM 1B |
+| **Parameters** | 1B |
+| **Pre-training** | Base model (not fine-tuned) |
+| **Voice Consistency** | ⚠️ Requires audio context per speaker |
+| **Special Features** | Flexible, works with any voice via context |
+| **HuggingFace** | Available via Unsloth |
+
+**Pros:**
+- ✅ Smaller model = lower latency
+- ✅ More flexible (can adapt to any voice with context)
+- ✅ Good for resource-constrained deployments
+
+**Cons:**
+- ⚠️ Requires audio context for each speaker for consistency
+- ⚠️ More compute needed for fine-tuning (base model)
+- Voice may vary across generations without context
+
+**When to Use:** Choose CSM when you need a smaller model and can provide audio context, or when flexibility across different voices is more important than built-in consistency.
+
+---
+
+### Other Unsloth-Supported TTS Models
+
+| Model | Parameters | Notes |
+|-------|------------|-------|
+| **Spark-TTS** | 0.5B | Ultra-lightweight, good for edge deployment |
+| **Llasa-TTS** | 1B | Alternative 1B option |
+| **Oute-TTS** | 1B | Alternative 1B option |
+| **Dia-TTS** | Varies | Also supported (transformers-compatible) |
+| **Moshi** | Varies | Also supported (transformers-compatible) |
+
+> **Note:** Unsloth supports **any** `transformers`-compatible TTS model. Even without an official notebook, you can fine-tune other models.
+
+---
+
+### Unsloth Fine-Tuning Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| **GPU VRAM** | 8GB (4-bit) | 16GB+ (16-bit/FFT) |
+| **Training** | LoRA 4-bit | LoRA 16-bit or Full Fine-tuning |
+| **Dataset** | Audio clips + transcripts | ~3 hours recommended |
+| **Audio Sample Rate** | 24 kHz | 24 kHz (Orpheus requirement) |
+
+**Training Options:**
+- `load_in_4bit = True` — 4-bit quantized (less VRAM)
+- `load_in_8bit = True` — 8-bit quantized (balanced)
+- `load_in_4bit = False` — 16-bit LoRA (higher quality)
+- `full_finetuning = True` — Full fine-tuning (best quality, most VRAM)
+
+**Example Training Config:**
+```python
+from transformers import TrainingArguments, Trainer
+
+trainer = Trainer(
+    model=model,
+    train_dataset=dataset,
+    args=TrainingArguments(
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=4,
+        warmup_steps=5,
+        max_steps=60,  # Set num_train_epochs=1 for full run
+        learning_rate=2e-4,
+        fp16=not is_bfloat16_supported(),
+        bf16=is_bfloat16_supported(),
+        logging_steps=1,
+        optim="adamw_8bit",
+        weight_decay=0.01,
+        lr_scheduler_type="linear",
+        output_dir="outputs",
+    ),
+)
+trainer.fit()
+```
+
+---
+
+### Emotional Expression Tags (Orpheus)
+
+Orpheus supports special tags for emotional expressions in transcripts:
+
+| Tag | Expression |
+|-----|------------|
+| `<laugh>` | Laughter |
+| `<chuckle>` | Light chuckle |
+| `<sigh>` | Sigh |
+| `<cough>` | Cough |
+| `<sniffle>` | Sniffle |
+| `<groan>` | Groan |
+| `<yawn>` | Yawn |
+| `<gasp>` | Gasp |
+
+**Example Transcript:**
+```
+"I missed you <laugh> so much! <sigh> It's been too long."
+```
+
+> **Tip:** Use the [MrDragonFox/Elise](https://huggingface.co/datasets/MrDragonFox/Elise) dataset as a reference — it includes emotion tags annotated in the transcripts.
+
+---
+
 ## Voice Cloning Process
 
 This section details how to actually clone your voice using reference audio samples.
@@ -223,26 +521,43 @@ This script covers most English phonemes in natural sentences.
 
 Zero-shot cloning extracts voice characteristics from a short audio sample without any training. This is the fastest approach.
 
-**For Qwen3-TTS-VC-VoiceDesign:**
+**For Qwen3-TTS (Recommended — SOTA):**
 ```python
-# Voice enrollment - creates a voice profile from reference audio
-from dashscope.audio.tts_v2 import VoiceEnrollmentService
+import torch
+import soundfile as sf
+from qwen_tts import Qwen3TTSModel
 
-# Create voice profile from reference audio
-enrollment = VoiceEnrollmentService()
-voice_id = enrollment.create_voice(
-    audio_file="my_voice_reference.wav",
-    target_model="qwen3-tts-vc-realtime-2025-11-27"
+# Load the base model for voice cloning
+model = Qwen3TTSModel.from_pretrained(
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    device_map="cuda:0",
+    dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
 )
 
-# Use cloned voice for synthesis
-from dashscope.audio.tts_v2 import SpeechSynthesizer
-
-synthesizer = SpeechSynthesizer(
-    model="qwen3-tts-vc-realtime-2025-11-27",
-    voice=voice_id
+# Clone voice with just 3 seconds of reference audio
+wavs, sr = model.generate_voice_clone(
+    text="Hello, this is my cloned voice!",
+    language="English",
+    ref_audio="my_voice_reference.wav",
+    ref_text="The transcript of my reference audio.",  # Optional but improves quality
 )
-audio = synthesizer.synthesize("Hello, this is my cloned voice!")
+sf.write("output.wav", wavs[0], sr)
+
+# For multiple generations, create a reusable prompt to avoid recomputing
+voice_prompt = model.create_voice_clone_prompt(
+    ref_audio="my_voice_reference.wav",
+    ref_text="The transcript of my reference audio.",
+)
+
+# Reuse the prompt for batch generation
+wavs, sr = model.generate_voice_clone(
+    text=["First sentence.", "Second sentence.", "Third sentence."],
+    language=["English", "English", "English"],
+    voice_clone_prompt=voice_prompt,
+)
+for i, wav in enumerate(wavs):
+    sf.write(f"output_{i}.wav", wav, sr)
 ```
 
 **For XTTS-v2 (Coqui TTS):**
@@ -429,8 +744,8 @@ preprocess_audio("raw_recording.wav", "processed_reference.wav")
 
 | Model | Languages |
 |-------|-----------|
-| **Qwen3-TTS-VC** | Chinese, English, German, Italian, Portuguese, Spanish, Japanese, Korean, French, Russian |
-| **XTTS-v2** | English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Hungarian, Korean, Hindi |
+| **Qwen3-TTS** | Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian (10 languages) |
+| **XTTS-v2** | English, Spanish, French, German, Italian, Portuguese, Polish, Turkish, Russian, Dutch, Czech, Arabic, Chinese, Japanese, Hungarian, Korean, Hindi (17 languages) |
 | **GLM-TTS** | Chinese, English |
 | **OpenVoice** | Cross-lingual (any via IPA phoneme alignment) |
 
@@ -440,7 +755,20 @@ preprocess_audio("raw_recording.wav", "processed_reference.wav")
 
 ### Phase 1: Linux Server Setup
 
-1. **Install TTS Model**
+1. **Install TTS Model (Qwen3-TTS — Recommended)**
+   ```bash
+   # Create isolated environment
+   conda create -n qwen3-tts python=3.12 -y
+   conda activate qwen3-tts
+   
+   # Install qwen-tts package
+   pip install -U qwen-tts
+   
+   # Install FlashAttention 2 for memory efficiency
+   pip install -U flash-attn --no-build-isolation
+   ```
+
+   **Alternative: XTTS-v2 (Coqui TTS)**
    ```bash
    pip install TTS
    # or clone from GitHub for latest version
@@ -449,11 +777,35 @@ preprocess_audio("raw_recording.wav", "processed_reference.wav")
    ```
 
 2. **Record Voice Reference Audio**
-   - Record 10-30 seconds of clear speech
+   - Record 3-10 seconds of clear speech (Qwen3-TTS only needs 3 seconds!)
    - Diverse sentences covering different phonemes
-   - High quality audio (44.1kHz, minimal background noise)
+   - High quality audio (24kHz+, minimal background noise)
 
 3. **Test Voice Cloning Locally**
+
+   **With Qwen3-TTS (Recommended):**
+   ```python
+   import torch
+   import soundfile as sf
+   from qwen_tts import Qwen3TTSModel
+   
+   model = Qwen3TTSModel.from_pretrained(
+       "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+       device_map="cuda:0",
+       dtype=torch.bfloat16,
+       attn_implementation="flash_attention_2",
+   )
+   
+   wavs, sr = model.generate_voice_clone(
+       text="Hello, this is my cloned voice speaking.",
+       language="English",
+       ref_audio="my_voice_reference.wav",
+       ref_text="Transcript of my reference audio.",
+   )
+   sf.write("output.wav", wavs[0], sr)
+   ```
+
+   **With XTTS-v2:**
    ```python
    from TTS.api import TTS
    
@@ -645,17 +997,17 @@ numpy
 
 ## Open Questions
 
-1. **Latency** — What's the acceptable latency for real-time speech? May need to optimize or use streaming.
-2. ~~**Voice Quality** — How much reference audio is optimal for best voice clone quality?~~ ✅ **Resolved:** Zero-shot needs 15-30s; fine-tuning needs 5-30 min for production quality.
-3. **Model Selection** — Need to test XTTS-v2 vs GLM-TTS vs OpenVoice for quality comparison
-4. **Streaming** — Should we implement streaming TTS for longer texts?
+1. ~~**Latency** — What's the acceptable latency for real-time speech?~~ ✅ **Resolved:** Qwen3-TTS achieves 97ms first-packet latency with streaming support.
+2. ~~**Voice Quality** — How much reference audio is optimal for best voice clone quality?~~ ✅ **Resolved:** Qwen3-TTS needs only 3 seconds; XTTS-v2 needs 6+ seconds; fine-tuning needs 5-30 min for production quality.
+3. ~~**Model Selection** — Need to test XTTS-v2 vs GLM-TTS vs OpenVoice for quality comparison~~ ✅ **Resolved:** Qwen3-TTS is now SOTA on benchmarks; recommended as primary choice with XTTS-v2 as mature fallback.
+4. ~~**Streaming** — Should we implement streaming TTS for longer texts?~~ ✅ **Resolved:** Qwen3-TTS has built-in streaming support with dual-track architecture.
 
 ## Next Steps
 
 ### Core Implementation
 - [ ] Set up Linux desktop with NVIDIA GPU and CUDA
-- [ ] Install and test XTTS-v2 locally
-- [ ] Record voice reference audio samples (15-30 seconds for zero-shot)
+- [ ] Install and test Qwen3-TTS locally (recommended) or XTTS-v2 as fallback
+- [ ] Record voice reference audio samples (3-10 seconds for Qwen3-TTS zero-shot)
 - [ ] Test voice cloning quality (zero-shot baseline)
 - [ ] Build FastAPI server in Docker container
 - [ ] Build MCP server for Cursor
@@ -665,18 +1017,36 @@ numpy
 - [ ] Record extended training data (5-30 minutes)
 - [ ] Create transcriptions for all clips
 - [ ] Preprocess and split dataset
-- [ ] Run fine-tuning training (2-8 hours)
+- [ ] Run fine-tuning training using [Qwen3-TTS fine-tuning guide](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning)
 - [ ] Evaluate fine-tuned vs zero-shot quality
 - [ ] Deploy fine-tuned model
 
 ## References
 
-- [Qwen3-TTS-VC-VoiceDesign Blog](https://qwen.ai/blog?id=qwen3-tts-vc-voicedesign) ⭐ **Recommended**
-- [Coqui TTS GitHub](https://github.com/coqui-ai/TTS)
+### Qwen3-TTS (SOTA — Recommended)
+- [Qwen3-TTS GitHub](https://github.com/QwenLM/Qwen3-TTS) ⭐ **Open Source Repository**
+- [Qwen3-TTS HuggingFace Collection](https://huggingface.co/collections/Qwen/qwen3-tts) ⭐ **Model Weights**
+- [Qwen3-TTS Technical Report (arXiv:2601.15621)](https://arxiv.org/abs/2601.15621) — Academic paper with architecture details
+- [Qwen3-TTS Blog](https://qwen.ai/blog?id=qwen3tts-0115) — Official release announcement
+- [Qwen3-TTS Demo (HuggingFace Spaces)](https://huggingface.co/spaces/Qwen/Qwen3-TTS) — Interactive demo
+- [vLLM-Omni Qwen3-TTS Support](https://github.com/vllm-project/vllm-omni/tree/main/examples/offline_inference/qwen3_tts) — Optimized inference examples
+
+### Other TTS Models
+- [Coqui TTS GitHub](https://github.com/coqui-ai/TTS) — XTTS-v2 repository
 - [GLM-TTS](https://glm-tts.com/)
 - [OpenVoice Framework](https://www.emergentmind.com/topics/openvoice-framework)
 - [BentoML: Exploring Open Source TTS Models](https://www.bentoml.com/blog/exploring-the-world-of-open-source-text-to-speech-models)
 - [TTS With Instant Voice Cloning: 5 Local Models Compared (YouTube)](https://www.youtube.com/watch?v=led0nCZHVkQ)
+
+### Fine-Tuning Resources
+- [Qwen3-TTS Fine-tuning Guide](https://github.com/QwenLM/Qwen3-TTS/tree/main/finetuning) ⭐ **Qwen3-TTS Fine-tuning**
+- [Unsloth TTS Fine-tuning Guide](https://unsloth.ai/docs/basics/text-to-speech-tts-fine-tuning) — Orpheus-TTS, Sesame-CSM fine-tuning
+- [MrDragonFox/Elise Dataset](https://huggingface.co/datasets/MrDragonFox/Elise) — Example training dataset with emotion tags
+
+### Speech Recognition (ASR)
+- [NVIDIA Nemotron Speech ASR](https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b) — Low-latency streaming ASR model
+
+### Integration
 - [MCP Server Documentation](https://modelcontextprotocol.io/)
 
 ---
@@ -686,4 +1056,7 @@ numpy
 - [[voice-cloning-tts-mcp-server-implementation]] — Detailed implementation plan with step-by-step instructions
 - [[2026-01-07]] — Initial design proposal created
 - [[2026-01-09]] — Added comprehensive fine-tuning section
+- [[2026-01-13]] — Added Unsloth fine-tuning models (Orpheus-TTS, Sesame-CSM, Spark-TTS, etc.)
+- [[2026-01-15]] — Added NVIDIA Nemotron Speech ASR for low-latency streaming STT
+- [[2026-01-26]] — **Major update:** Added Qwen3-TTS as new SOTA open-source model (released Jan 22, 2026)
 
