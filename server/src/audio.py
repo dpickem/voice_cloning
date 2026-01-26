@@ -20,7 +20,8 @@ from numpy.typing import NDArray
 AudioArray = NDArray[np.float32]
 
 # Defaults
-DEFAULT_SAMPLE_RATE: Final[int] = 22050
+# 24000 Hz is optimal for Qwen3-TTS (SOTA) and also works well with XTTS-v2
+DEFAULT_SAMPLE_RATE: Final[int] = 24000
 DEFAULT_TRIM_TOP_DB: Final[int] = 25
 DEFAULT_NOISE_REDUCTION: Final[float] = 0.8
 

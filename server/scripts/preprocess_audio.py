@@ -3,13 +3,13 @@
 Audio preprocessing script for voice cloning reference files.
 
 Normalizes, denoises, and resamples audio to optimal format for
-XTTS-v2 voice cloning. Can be run inside the Docker container
-or standalone with dependencies installed.
+Qwen3-TTS (SOTA) and XTTS-v2 voice cloning. Can be run inside the
+Docker container or standalone with dependencies installed.
 
 Usage (from server/ directory):
     python scripts/preprocess_audio.py input.wav -o output.wav
     python scripts/preprocess_audio.py voice_references/raw.mp3 -o voice_references/processed.wav
-    python scripts/preprocess_audio.py input.mp3 --sr 22050 --no-denoise
+    python scripts/preprocess_audio.py input.mp3 --sr 24000 --no-denoise
 
 File structure:
     server/
@@ -89,7 +89,7 @@ def main() -> None:
     parser.add_argument(
         "-o", "--output", help="Output file (default: input_processed.wav)"
     )
-    parser.add_argument("--sr", type=int, default=22050, help="Target sample rate")
+    parser.add_argument("--sr", type=int, default=24000, help="Target sample rate (24000 for Qwen3-TTS)")
     parser.add_argument(
         "--no-normalize", action="store_true", help="Skip normalization"
     )
