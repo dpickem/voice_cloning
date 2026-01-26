@@ -20,6 +20,7 @@ class ModelType(str, Enum):
     """Supported TTS model types."""
 
     XTTS = "xtts"
+    QWEN3_TTS = "qwen3-tts"  # SOTA voice cloning (Jan 2026)
     # F5_TTS disabled due to torchcodec/FFmpeg dependency conflicts
     # F5_TTS = "f5-tts"
 
