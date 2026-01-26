@@ -70,6 +70,9 @@ services:
       
       # Training data (for fine-tuning)
       - ../../data/training:/app/training_data
+      
+      # Scripts (for preprocessing and fine-tuning)
+      - ../scripts:/app/scripts
     
     # Environment variables
     environment:
