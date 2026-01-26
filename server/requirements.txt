@@ -26,7 +26,12 @@ python-dotenv>=1.0.0
 # TTS Backends
 # =============================================================================
 
-# XTTS v2 (Coqui TTS) - default backend
+# Qwen3-TTS (SOTA) - Recommended for voice cloning (Jan 2026)
+# Requires Python 3.12 and FlashAttention 2 for optimal performance
+# Only needs 3 seconds of reference audio!
+qwen-tts>=1.0.0
+
+# XTTS v2 (Coqui TTS) - mature fallback option
 TTS>=0.22.0
 # Pin transformers to avoid BeamSearchScorer import error (removed in transformers>=4.40)
 transformers>=4.33.0,<4.40.0
